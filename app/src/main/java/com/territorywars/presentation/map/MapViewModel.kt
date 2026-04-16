@@ -35,15 +35,19 @@ data class MapState(
     val routeDistanceM: Double = 0.0,
     val captureDurationSec: Long = 0L,
     val distanceToStartM: Double = Double.MAX_VALUE,
-    val canFinishCapture: Boolean = false,   // расстояние до старта < 15 м
+    val canFinishCapture: Boolean = false,
     val currentLat: Double? = null,
     val currentLng: Double? = null,
     val notification: String? = null,
-    val isLoading: Boolean = false
+    val isLoading: Boolean = false,
+    val lastBbox: String? = null
 )
 
 private const val CLOSE_RADIUS_M = 15.0
 private const val MIN_POINTS = 20
+private const val BBOX_DEBOUNCE_MS = 500L
+private const val GPS_INTERVAL_CAPTURING_MS = 2000L
+private const val GPS_INTERVAL_IDLE_MS = 5000L
 
 @HiltViewModel
 class MapViewModel @Inject constructor(
@@ -60,11 +64,8 @@ class MapViewModel @Inject constructor(
     private var mapView: MapView? = null
     private var captureStartTime: Long = 0L
     private var timerJob: Job? = null
-    private var locationJob: Job? = null
-
-    private val locationRequest = LocationRequest.Builder(
-        Priority.PRIORITY_HIGH_ACCURACY, 2000L
-    ).setMinUpdateIntervalMillis(1000L).build()
+    private var bboxDebounceJob: Job? = null
+    private var currentLocationRequest = buildLocationRequest(GPS_INTERVAL_IDLE_MS)
 
     private val locationCallback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
@@ -76,6 +77,16 @@ class MapViewModel @Inject constructor(
 
     init {
         loadCurrentUser()
+    }
+
+    private fun buildLocationRequest(intervalMs: Long): LocationRequest {
+        return LocationRequest.Builder(
+            Priority.PRIORITY_BALANCED_POWER_ACCURACY,
+            intervalMs
+        )
+            .setMinUpdateIntervalMillis((intervalMs / 2).toLong())
+            .setMaxUpdateDelayMillis(intervalMs * 2)
+            .build()
     }
 
     private fun loadCurrentUser() {
@@ -97,21 +108,21 @@ class MapViewModel @Inject constructor(
 
     @SuppressLint("MissingPermission")
     fun startLocationUpdates() {
-        fusedLocationClient.requestLocationUpdates(locationRequest, locationCallback, null)
-        // Загрузить территории при старте
+        fusedLocationClient.requestLocationUpdates(currentLocationRequest, locationCallback, null)
         loadTerritoriesInView()
     }
 
     private fun onNewLocation(lat: Double, lng: Double, accuracy: Float) {
         _state.update { it.copy(currentLat = lat, currentLng = lng) }
 
-        // Первая точка → центрируем карту
         if (_state.value.routePoints.isEmpty() && !_state.value.isCapturing) {
             centerOnLocation(lat, lng)
         }
 
+        onMapMoved(lat, lng)
+
         if (_state.value.isCapturing) {
-            if (accuracy > 30f) return // Отбрасываем неточные точки
+            if (accuracy > 30f) return
 
             val point = RoutePoint(lat, lng, System.currentTimeMillis(), accuracy)
             val newPoints = _state.value.routePoints + point
@@ -133,6 +144,28 @@ class MapViewModel @Inject constructor(
         }
     }
 
+    private fun onMapMoved(lat: Double, lng: Double) {
+        val bbox = calculateBbox(lat, lng)
+        val lastBbox = _state.value.lastBbox
+
+        if (lastBbox != bbox) {
+            bboxDebounceJob?.cancel()
+            bboxDebounceJob = viewModelScope.launch {
+                delay(BBOX_DEBOUNCE_MS)
+                loadTerritoriesInBbox(bbox)
+            }
+        }
+    }
+
+    private fun calculateBbox(centerLat: Double, centerLng: Double): String {
+        val offset = 0.02
+        val lat1 = centerLat - offset
+        val lat2 = centerLat + offset
+        val lng1 = centerLng - offset
+        val lng2 = centerLng + offset
+        return "$lat1,$lng1,$lat2,$lng2"
+    }
+
     fun centerOnMyLocation() {
         val s = _state.value
         if (s.currentLat != null && s.currentLng != null) {
@@ -149,13 +182,29 @@ class MapViewModel @Inject constructor(
     }
 
     fun startCapture() {
-        _state.update { it.copy(isCapturing = true, routePoints = emptyList(), routeDistanceM = 0.0, captureDurationSec = 0L) }
+        _state.update {
+            it.copy(isCapturing = true, routePoints = emptyList(), routeDistanceM = 0.0, captureDurationSec = 0L)
+        }
         captureStartTime = System.currentTimeMillis()
         startTimer()
-        // Запустить Foreground Service
+        switchToCapturingMode()
         context.startService(Intent(context, GpsTrackingService::class.java).apply {
             action = GpsTrackingService.ACTION_START
         })
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun switchToCapturingMode() {
+        currentLocationRequest = buildLocationRequest(GPS_INTERVAL_CAPTURING_MS)
+        fusedLocationClient.removeLocationUpdates(locationCallback)
+        fusedLocationClient.requestLocationUpdates(currentLocationRequest, locationCallback, null)
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun switchToIdleMode() {
+        currentLocationRequest = buildLocationRequest(GPS_INTERVAL_IDLE_MS)
+        fusedLocationClient.removeLocationUpdates(locationCallback)
+        fusedLocationClient.requestLocationUpdates(currentLocationRequest, locationCallback, null)
     }
 
     fun cancelCapture() {
@@ -207,6 +256,7 @@ class MapViewModel @Inject constructor(
 
     private fun stopCapture() {
         timerJob?.cancel()
+        switchToIdleMode()
         context.startService(Intent(context, GpsTrackingService::class.java).apply {
             action = GpsTrackingService.ACTION_STOP
         })
@@ -224,7 +274,6 @@ class MapViewModel @Inject constructor(
     }
 
     fun onMapTapped(lat: Double, lng: Double) {
-        // Найти территорию в радиусе тапа (логика упрощена — можно расширить через PostGIS)
         val territory = _state.value.territories.firstOrNull { t ->
             isPointInPolygon(GeoPoint(lat, lng), t.polygon)
         }
@@ -243,14 +292,27 @@ class MapViewModel @Inject constructor(
     private fun loadTerritoriesInView() {
         viewModelScope.launch {
             try {
-                // Загружаем в bbox текущей области — упрощённый bbox
-                val response = territoryApi.getTerritoriesInBbox("55.5,37.3,55.9,37.9")
-                if (response.isSuccessful) {
-                    _state.update { it.copy(territories = response.body()!!.map { dto -> dto.toDomain() }) }
-                }
+                val bbox = calculateBbox(55.7558, 37.6173)
+                loadTerritoriesInBbox(bbox)
             } catch (e: Exception) {
                 Timber.e(e, "Failed to load territories")
             }
+        }
+    }
+
+    private suspend fun loadTerritoriesInBbox(bbox: String) {
+        try {
+            val response = territoryApi.getTerritoriesInBbox(bbox)
+            if (response.isSuccessful) {
+                _state.update {
+                    it.copy(
+                        territories = response.body()!!.map { dto -> dto.toDomain() },
+                        lastBbox = bbox
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to load territories in bbox: $bbox")
         }
     }
 
@@ -261,9 +323,8 @@ class MapViewModel @Inject constructor(
     override fun onCleared() {
         super.onCleared()
         fusedLocationClient.removeLocationUpdates(locationCallback)
+        bboxDebounceJob?.cancel()
     }
-
-    // --- Гео-утилиты ---
 
     private fun haversineM(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
         val r = 6371000.0
@@ -278,7 +339,6 @@ class MapViewModel @Inject constructor(
         return points.zipWithNext().sumOf { (a, b) -> haversineM(a.lat, a.lng, b.lat, b.lng) }
     }
 
-    // Ray-casting алгоритм для проверки точки в полигоне
     private fun isPointInPolygon(point: GeoPoint, polygon: List<GeoPoint>): Boolean {
         var inside = false
         var j = polygon.size - 1

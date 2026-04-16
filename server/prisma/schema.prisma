@@ -26,6 +26,7 @@ model User {
   distanceWalkedM  Float    @default(0) @map("distance_walked_m")
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")
+  fcmToken          String?  @map("fcm_token")
 
   city           City            @relation(fields: [cityId], references: [id])
   clan           Clan?           @relation("ClanMembers", fields: [clanId], references: [id])
