@@ -44,3 +44,4 @@ admin/dist/
 *.db
 *.sqlite
 *.log
+app/google-services.json
