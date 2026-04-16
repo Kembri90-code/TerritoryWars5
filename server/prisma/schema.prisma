@@ -1,0 +1,121 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+  binaryTargets   = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [postgis]
+}
+
+model User {
+  id               String   @id @default(uuid())
+  email            String   @unique
+  username         String   @unique
+  passwordHash     String   @map("password_hash")
+  avatarUrl        String?  @map("avatar_url")
+  color            String   @default("#2979FF")
+  cityId           Int      @map("city_id")
+  clanId           String?  @map("clan_id")
+  totalAreaM2      Float    @default(0) @map("total_area_m2")
+  territoriesCount Int      @default(0) @map("territories_count")
+  capturesCount    Int      @default(0) @map("captures_count")
+  takeoversCount   Int      @default(0) @map("takeovers_count")
+  distanceWalkedM  Float    @default(0) @map("distance_walked_m")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  city           City            @relation(fields: [cityId], references: [id])
+  clan           Clan?           @relation("ClanMembers", fields: [clanId], references: [id])
+  ledClan        Clan?           @relation("ClanLeader")
+  territories    Territory[]
+  clanMembership ClanMember?
+  refreshTokens  RefreshToken[]
+
+  @@map("users")
+}
+
+model City {
+  id         Int    @id @default(autoincrement())
+  name       String
+  region     String
+  population Int    @default(0)
+  lat        Float
+  lng        Float
+
+  users User[]
+
+  @@map("cities")
+}
+
+model Territory {
+  id           String   @id @default(uuid())
+  ownerId      String   @map("owner_id")
+  clanId       String?  @map("clan_id")
+  areaM2       Float    @map("area_m2")
+  perimeterM   Float    @default(0) @map("perimeter_m")
+  capturedAt   DateTime @default(now()) @map("captured_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  owner User  @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  clan  Clan? @relation(fields: [clanId], references: [id], onDelete: SetNull)
+
+  @@map("territories")
+}
+
+model Clan {
+  id              String   @id @default(uuid())
+  name            String   @unique
+  tag             String   @unique
+  leaderId        String   @unique @map("leader_id")
+  color           String   @default("#FF6D00")
+  description     String?
+  maxMembers      Int      @default(50) @map("max_members")
+  totalAreaM2     Float    @default(0) @map("total_area_m2")
+  territoriesCount Int     @default(0) @map("territories_count")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  leader      User         @relation("ClanLeader", fields: [leaderId], references: [id])
+  members     User[]       @relation("ClanMembers")
+  clanMembers ClanMember[]
+  territories Territory[]
+
+  @@map("clans")
+}
+
+model ClanMember {
+  userId   String   @id @map("user_id")
+  clanId   String   @map("clan_id")
+  role     String   @default("MEMBER")
+  joinedAt DateTime @default(now()) @map("joined_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clan Clan @relation(fields: [clanId], references: [id], onDelete: Cascade)
+
+  @@index([clanId])
+  @@map("clan_members")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  tokenHash String   @map("token_hash")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("refresh_tokens")
+}
+
+model Admin {
+  id           String   @id @default(uuid())
+  username     String   @unique
+  passwordHash String   @map("password_hash")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@map("admins")
+}

@@ -1,0 +1,67 @@
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
+
+const CITIES = [
+  { name: 'Москва', region: 'Московская область', population: 13010112, lat: 55.7558, lng: 37.6173 },
+  { name: 'Санкт-Петербург', region: 'Ленинградская область', population: 5601000, lat: 59.9311, lng: 30.3609 },
+  { name: 'Новосибирск', region: 'Новосибирская область', population: 1625631, lat: 54.9833, lng: 82.8964 },
+  { name: 'Екатеринбург', region: 'Свердловская область', population: 1544376, lat: 56.8389, lng: 60.6057 },
+  { name: 'Казань', region: 'Республика Татарстан', population: 1308660, lat: 55.7887, lng: 49.1221 },
+  { name: 'Нижний Новгород', region: 'Нижегородская область', population: 1244254, lat: 56.3287, lng: 44.002 },
+  { name: 'Красноярск', region: 'Красноярский край', population: 1212658, lat: 56.0153, lng: 92.8932 },
+  { name: 'Челябинск', region: 'Челябинская область', population: 1179162, lat: 55.1644, lng: 61.4368 },
+  { name: 'Самара', region: 'Самарская область', population: 1163399, lat: 53.1959, lng: 50.1002 },
+  { name: 'Уфа', region: 'Республика Башкортостан', population: 1144809, lat: 54.7388, lng: 55.9721 },
+  { name: 'Ростов-на-Дону', region: 'Ростовская область', population: 1142162, lat: 47.2357, lng: 39.7015 },
+  { name: 'Омск', region: 'Омская область', population: 1134016, lat: 54.9885, lng: 73.3242 },
+  { name: 'Краснодар', region: 'Краснодарский край', population: 1106750, lat: 45.0355, lng: 38.9753 },
+  { name: 'Воронеж', region: 'Воронежская область', population: 1058261, lat: 51.6755, lng: 39.2088 },
+  { name: 'Пермь', region: 'Пермский край', population: 1034002, lat: 58.0296, lng: 56.2587 },
+  { name: 'Волгоград', region: 'Волгоградская область', population: 1004763, lat: 48.7194, lng: 44.5018 },
+  { name: 'Саратов', region: 'Саратовская область', population: 838042, lat: 51.5406, lng: 46.0086 },
+  { name: 'Тюмень', region: 'Тюменская область', population: 827669, lat: 57.1522, lng: 65.5272 },
+  { name: 'Тольятти', region: 'Самарская область', population: 700424, lat: 53.5303, lng: 49.3461 },
+  { name: 'Ижевск', region: 'Удмуртская Республика', population: 648146, lat: 56.8484, lng: 53.2257 },
+  { name: 'Барнаул', region: 'Алтайский край', population: 629846, lat: 53.3606, lng: 83.7636 },
+  { name: 'Ульяновск', region: 'Ульяновская область', population: 615562, lat: 54.317, lng: 48.4023 },
+  { name: 'Иркутск', region: 'Иркутская область', population: 617473, lat: 52.2978, lng: 104.2964 },
+  { name: 'Хабаровск', region: 'Хабаровский край', population: 610305, lat: 48.4827, lng: 135.0840 },
+  { name: 'Ярославль', region: 'Ярославская область', population: 607134, lat: 57.6261, lng: 39.8845 },
+  { name: 'Владивосток', region: 'Приморский край', population: 600378, lat: 43.1332, lng: 131.9113 },
+  { name: 'Махачкала', region: 'Республика Дагестан', population: 601578, lat: 42.9849, lng: 47.504 },
+  { name: 'Томск', region: 'Томская область', population: 568508, lat: 56.4977, lng: 84.9744 },
+  { name: 'Оренбург', region: 'Оренбургская область', population: 564445, lat: 51.7727, lng: 55.0988 },
+  { name: 'Кемерово', region: 'Кемеровская область', population: 550094, lat: 55.3333, lng: 86.0833 },
+  { name: 'Новокузнецк', region: 'Кемеровская область', population: 537247, lat: 53.7557, lng: 87.1099 },
+  { name: 'Рязань', region: 'Рязанская область', population: 533679, lat: 54.6269, lng: 39.6916 },
+  { name: 'Астрахань', region: 'Астраханская область', population: 524371, lat: 46.3497, lng: 48.0408 },
+  { name: 'Пенза', region: 'Пензенская область', population: 513551, lat: 53.1959, lng: 45.0183 },
+  { name: 'Набережные Челны', region: 'Республика Татарстан', population: 533857, lat: 55.7435, lng: 52.4027 },
+  { name: 'Липецк', region: 'Липецкая область', population: 500231, lat: 52.6031, lng: 39.5708 },
+  { name: 'Тула', region: 'Тульская область', population: 470211, lat: 54.1961, lng: 37.6182 },
+  { name: 'Киров', region: 'Кировская область', population: 469981, lat: 58.5963, lng: 49.6582 },
+  { name: 'Чебоксары', region: 'Чувашская Республика', population: 496867, lat: 56.1439, lng: 47.2489 },
+  { name: 'Калининград', region: 'Калининградская область', population: 493772, lat: 54.7065, lng: 20.5109 },
+];
+
+async function main() {
+  console.log('Seeding cities...');
+  for (const city of CITIES) {
+    await prisma.city.upsert({
+      where: { id: CITIES.indexOf(city) + 1 },
+      create: city,
+      update: city,
+    });
+  }
+  console.log(`Seeded ${CITIES.length} cities.`);
+}
+
+main()
+  .catch((e) => {
+    console.error(e);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });

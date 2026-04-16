@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Шестиугольник — символ территории -->
+    <path
+        android:fillColor="#00C853"
+        android:pathData="M54,18
+            L81.7,33
+            L81.7,63
+            L54,78
+            L26.3,63
+            L26.3,33
+            Z" />
+
+    <!-- Внутренний шестиугольник (полый) -->
+    <path
+        android:fillColor="#0D0D0D"
+        android:pathData="M54,30
+            L72.7,40.5
+            L72.7,61.5
+            L54,72
+            L35.3,61.5
+            L35.3,40.5
+            Z" />
+
+    <!-- Буква T по центру -->
+    <path
+        android:fillColor="#00C853"
+        android:pathData="M43,42 L65,42 L65,47 L57,47 L57,66 L51,66 L51,47 L43,47 Z" />
+
+</vector>

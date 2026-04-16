@@ -1,0 +1,46 @@
+# Android
+app/build/
+app/.gradle/
+.gradle/
+.idea/
+*.iml
+local.properties
+
+# Build
+build/
+dist/
+*.apk
+*.aar
+
+# Node
+node_modules/
+package-lock.json
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Server
+server/node_modules/
+server/dist/
+server/.env
+
+# Admin
+admin/node_modules/
+admin/dist/
+
+# Database
+*.db
+*.sqlite
+*.log
