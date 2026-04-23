@@ -478,44 +478,50 @@ fun AppBottomNav(
     )
 
     Column(modifier = modifier.fillMaxWidth()) {
-        HorizontalDivider(color = outline)
-        NavigationBar(
-            containerColor = surface,
-            tonalElevation = 0.dp,
-            modifier = Modifier.navigationBarsPadding(),
+        HorizontalDivider(color = outline.copy(alpha = 0.5f))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(surface)
+                .navigationBarsPadding()
+                .height(60.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             items.forEach { (id, label, icon) ->
                 val on = active == id
-                NavigationBarItem(
-                    selected = on,
-                    onClick = { if (!on) onNavigate(id) },
-                    icon = {
-                        if (id == "clan" && clanBadge > 0) {
-                            BadgedBox(badge = {
-                                Badge { Text(clanBadge.toString(), fontSize = 9.sp) }
-                            }) {
-                                Icon(icon, contentDescription = label, modifier = Modifier.size(20.dp))
-                            }
-                        } else {
-                            Icon(icon, contentDescription = label, modifier = Modifier.size(20.dp))
+                val iconTint = if (on) primary else onSurfVar
+                val textColor = if (on) primary else onSurfVar
+
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .clickable(
+                            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                            indication = null,
+                        ) { if (!on) onNavigate(id) },
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    if (id == "clan" && clanBadge > 0) {
+                        BadgedBox(badge = {
+                            Badge { Text(clanBadge.toString(), fontSize = 9.sp) }
+                        }) {
+                            Icon(icon, contentDescription = label, tint = iconTint, modifier = Modifier.size(24.dp))
                         }
-                    },
-                    label = {
-                        Text(
-                            text = label,
-                            fontSize = 10.sp,
-                            fontFamily = PlusJakartaSans,
-                            fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
-                        )
-                    },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor   = primary,
-                        selectedTextColor   = primary,
-                        unselectedIconColor = onSurfVar,
-                        unselectedTextColor = onSurfVar,
-                        indicatorColor      = primary.copy(alpha = 0.15f),
-                    ),
-                )
+                    } else {
+                        Icon(icon, contentDescription = label, tint = iconTint, modifier = Modifier.size(24.dp))
+                    }
+                    Spacer(modifier = Modifier.height(3.dp))
+                    Text(
+                        text = label,
+                        fontSize = 10.sp,
+                        fontFamily = PlusJakartaSans,
+                        fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
+                        color = textColor,
+                    )
+                }
             }
         }
     }
