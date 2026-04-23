@@ -100,9 +100,9 @@ fun MapScreen(
         // ── Capture status panel ──────────────────────────────────────────────
         AnimatedVisibility(
             visible = state.isCapturing,
-            enter = slideInVertically { -it } + fadeIn(),
-            exit = slideOutVertically { -it } + fadeOut(),
-            modifier = Modifier.align(Alignment.TopCenter),
+            enter = slideInVertically { it } + fadeIn(),
+            exit = slideOutVertically { it } + fadeOut(),
+            modifier = Modifier.align(Alignment.BottomCenter),
         ) {
             CaptureStatusPanel(
                 distanceM = state.routeDistanceM,
@@ -120,7 +120,7 @@ fun MapScreen(
                 onBg = onBg,
                 onSurfVar = onSurfVar,
                 modifier = Modifier
-                    .statusBarsPadding()
+                    .navigationBarsPadding()
                     .padding(horizontal = 10.dp, vertical = 8.dp),
             )
         }
@@ -143,7 +143,7 @@ fun MapScreen(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .navigationBarsPadding()
-                .padding(end = 12.dp, bottom = if (state.isCapturing) 14.dp else 80.dp),
+                .padding(end = 12.dp, bottom = if (state.isCapturing) 170.dp else 80.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             GlassFab(onClick = viewModel::centerOnMyLocation, glassBg = glassBg, outline = outline) {
@@ -215,7 +215,7 @@ fun MapScreen(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .statusBarsPadding()
-                    .padding(top = if (state.isCapturing) 200.dp else 8.dp, start = 12.dp, end = 12.dp),
+                    .padding(top = 8.dp, start = 12.dp, end = 12.dp),
             )
         }
     }
