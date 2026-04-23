@@ -1,7 +1,7 @@
 # Territory Wars — Полное описание проекта
 
 > Документ написан для быстрого ввода в контекст нового чата с ИИ.
-> Последнее обновление: 2026-04-23
+> Последнее обновление: 2026-04-23 (сессия 3)
 
 ---
 
@@ -21,6 +21,29 @@ TerritoryWars/
 ├── app/          — Android-приложение (Kotlin, Jetpack Compose)
 ├── server/       — Node.js API + WebSocket сервер
 └── admin/        — Веб-панель администратора (React + Vite + Tailwind)
+
+C:\Clod\Tests\   — тест-кейсы и документация (НЕ часть сборки)
+├── maestro/      — Maestro E2E тесты (.yaml)
+├── androidTest/  — Android инструментальные тесты
+└── docs/         — бизнес-требования, скриншоты экранов
+```
+
+---
+
+## Подключение к серверу (SSH)
+
+```bash
+# Ключ лежит здесь:
+C:\Users\Илья\Downloads\runterritory-api.pem
+
+# Подключение:
+ssh -i "C:/Users/Илья/Downloads/runterritory-api.pem" -o StrictHostKeyChecking=no root@93.183.74.141
+
+# Загрузка файла:
+scp -i "C:/Users/Илья/Downloads/runterritory-api.pem" -o StrictHostKeyChecking=no <local> root@93.183.74.141:<remote>
+
+# Пересборка API после изменений:
+cd /opt/territorywars && docker compose build api && docker compose up -d api
 ```
 
 ---
@@ -90,17 +113,33 @@ buildConfigField("String", "WS_URL",   "\"ws://93.183.74.141\"")
 
 1. **Anti-cheat**: скорость между точками > 12 м/с → отклонение
 2. **Замыкание полигона**: добавляет первую точку в конец если не замкнут
-3. **Валидация через PostGIS**: `ST_IsValid`, мин. площадь 100 м², макс. 5 км²
-4. **Захват чужих территорий** (реализован):
-   - Находит все вражеские территории через `ST_Intersects`
-   - Для каждой: `ST_Dump(ST_MakeValid(ST_Difference(...)))` — получает оставшиеся куски
-   - Фильтрует: только `ST_Polygon` с площадью >= 100 м², берёт наибольший
-   - Если кусков нет → **полный захват**: `DELETE`, обновить статистику врага, `emitTerritoryDeleted()`
-   - Если есть кусок → **частичный захват**: `UPDATE polygon` врага, обновить статистику, `emitTerritoryUpdate()`
-5. **Слияние со своими**: если новый полигон перекрывает свои — `ST_Union` всех + создать новую запись
+3. **ST_MakeValid + ST_Dump**: самопересекающийся маршрут автоматически разбивается на несколько валидных полигонов (например, области A и B при маршруте-восьмёрке). Каждый кусок >= 100 м² и <= 5 км² захватывается отдельно.
+4. **Захват чужих территорий** для каждого куска:
+   - Находит вражеские территории через `ST_Intersects`
+   - `ST_Dump(ST_MakeValid(ST_Difference(...)))` — остатки врага
+   - Если кусков нет → **полный захват**: DELETE + `emitTerritoryDeleted()`
+   - Если есть кусок → **частичный захват**: UPDATE polygon + `emitTerritoryUpdate()`
+5. **Слияние со своими**: если кусок перекрывает свои — `ST_Union` всех → одна запись. Сохраняется настоящая объединённая геометрия (`ST_AsText(ST_Union(...)) AS merged_wkt`).
 6. **Создание новой** если нет пересечений
-7. **Broadcast**: `emitTerritoryUpdate()` всем клиентам через Socket.IO
-8. **Ответ**: `{ success, territory, merged, conquered: число_захваченных, error }`
+7. **Broadcast**: `emitTerritoryUpdate()` для каждого созданного куска через Socket.IO
+8. **Ответ**: `{ success, territory (первый/наибольший), merged, conquered, error }`
+
+### Raw SQL и типы UUID в PostgreSQL
+
+**ВАЖНО**: Prisma передаёт строковые параметры как `text`. PostgreSQL не имеет оператора `text = uuid`.
+Правильный способ сравнения в `$executeRaw` / `$queryRaw`:
+
+```typescript
+// ✅ Правильно — кастуем КОЛОНКУ к text:
+WHERE clan_id::text = ${clanId}
+WHERE id::text = ${userId}
+
+// ✅ Правильно — кастуем ПАРАМЕТР к uuid (для SET):
+SET clan_id = ${clanId}::uuid
+
+// ❌ Неправильно — вызывает ошибку "operator does not exist: text = uuid":
+WHERE clan_id = ${clanId}::uuid
+```
 
 ### WebSocket (`server/src/ws/socket.ts`)
 
@@ -175,8 +214,6 @@ Admin            — id, username, passwordHash
 | EditProfile | `edit_profile` | Редактировать профиль |
 | Leaderboard | `leaderboard` | Рейтинг |
 | Clan   | `clan` | Клан |
-| ClanCreate | `clan_create` | Создать клан |
-| ClanDetail | `clan_detail/{clanId}` | Детали клана |
 
 ### Структура пакетов
 
@@ -207,22 +244,24 @@ com.territorywars/
 │   ├── NetworkModule.kt   — OkHttp, Retrofit, все API
 │   └── AppModule.kt       — FusedLocationProviderClient, др.
 ├── domain/model/
-│   ├── Territory.kt       — id, ownerId, ownerUsername, ownerColor, clanId, clanColor,
-│   │                        polygon: List<GeoPoint>, areaM2, perimeterM, capturedAt, updatedAt
+│   ├── Territory.kt
 │   ├── GeoPoint.kt        — lat, lng
 │   ├── RoutePoint.kt      — lat, lng, timestamp, accuracy
 │   ├── Clan.kt
-│   ├── User.kt
+│   ├── ClanMember.kt      — userId, username, color, role, totalAreaM2, joinedAt
+│   ├── ClanLeaderboardEntry.kt
 │   └── LeaderboardEntry.kt
 ├── presentation/
 │   ├── map/
-│   │   ├── MapScreen.kt       — UI карты, кнопки захвата
-│   │   ├── MapViewModel.kt    — вся логика карты
+│   │   ├── MapScreen.kt       — UI карты, кнопки захвата, AppBottomNav
+│   │   ├── MapViewModel.kt    — вся логика карты + clanRequestsBadge
 │   │   ├── YandexMapView.kt   — AndroidView обёртка для MapKit
 │   │   └── PlayerMarkerIcon.kt
 │   ├── auth/ (Login, Register + ViewModels)
 │   ├── profile/
 │   ├── clan/
+│   │   ├── ClanScreen.kt      — экран клана (мой клан / топ кланов / заявки)
+│   │   └── ClanViewModel.kt   — ClanState, ClanJoinRequestItem
 │   ├── leaderboard/
 │   ├── splash/
 │   ├── components/         — AppTextField, PrimaryButton, TerritoryLogo
@@ -233,6 +272,35 @@ com.territorywars/
 │   └── FirebaseMessagingService.kt — FCM push
 ├── MainActivity.kt
 └── TerritoryWarsApp.kt    — Hilt Application, инициализация Timber + YandexMapKit
+```
+
+### MapScreen — компоновка UI
+
+```
+Box(fillMaxSize) {
+  YandexMapView                          — карта на весь экран
+  GPS permission banner                  — сверху, если нет разрешения
+  LegendPill "Ваши"                      — верхний правый угол (только не в захвате)
+  GlassFab (GPS кнопка)                  — правый нижний угол
+    bottom = если захват: 170dp, иначе: 80dp
+  "Начать захват" кнопка                 — нижний центр (только не в захвате)
+  CaptureStatusPanel                     — НИЖНИЙ центр (только в захвате, выезжает снизу)
+    содержит: Дистанция | Время | До старта + кнопки Отмена/Замкнуть
+  AppBottomNav                           — нижний центр (только не в захвате)
+  AppSnackbar                            — верхний центр (уведомления)
+}
+```
+
+### AppBottomNav — кастомный компактный бар
+
+```kotlin
+// НЕ используем NavigationBar из Material3 (он слишком высокий ~80dp)
+// Кастомный Row:
+Row(height = 60.dp) {
+  // 4 вкладки: Карта, Профиль, Рейтинг, Клан
+  // Иконки 24dp, подпись 10sp
+  // Клан: BadgedBox если clanRequestsBadge > 0
+}
 ```
 
 ### MapViewModel — ключевые константы
@@ -252,6 +320,34 @@ private const val GPS_INTERVAL_IDLE_MS = 5000L
 3. `canFinishCapture = routePoints.size >= MIN_POINTS`
 4. `finishCapture()` — отправляет `POST /territories/capture { route_points: [...] }`
 5. Ответ парсится: `conquered`, `merged` → показывается уведомление
+6. Дополнительные территории (при самопересечении) приходят через WebSocket
+
+### Клановая система
+
+**ClanState** (в `ClanViewModel`):
+```kotlin
+data class ClanState(
+  val myClan: Clan?,                        // null = не в клане
+  val myUserId: String?,
+  val members: List<ClanMember>,
+  val joinRequests: List<ClanJoinRequestItem>, // видны только лидеру
+  val topClans: List<ClanLeaderboardEntry>,    // когда не в клане
+  val isLoading, isActionLoading, error, actionError, successMessage,
+  val isCreating: Boolean,
+  val createForm: CreateClanForm,
+  val clanRequestsBadge: Int                // в MapState, для бейджа на вкладке
+)
+```
+
+**Функции ClanViewModel**:
+- `loadData()` — загружает клан, участников, заявки (если лидер)
+- `createClan()`, `joinClan()`, `leaveClan()`, `deleteClan()`
+- `kickMember(userId)`, `requestJoinClan(clanId)`
+- `acceptJoinRequest(userId)`, `declineJoinRequest(userId)`
+
+**ClanScreen — режимы**:
+1. Нет клана → список топ-кланов. Нажатие на клан → диалог заявки
+2. Есть клан → шапка с тегом/именем, статистика, список заявок (лидеру), список участников, кнопки Выйти/Удалить
 
 ### SocketManager — real-time обновления
 
@@ -261,11 +357,6 @@ class SocketManager @Inject constructor(private val tokenDataStore: TokenDataSto
     val territoryEvents: SharedFlow<TerritoryEvent>  // Updated | Deleted
     fun connect() { /* подключается с JWT, слушает territory_updated / territory_deleted */ }
     fun disconnect()
-}
-
-sealed class TerritoryEvent {
-    data class Updated(val territory: Territory) : TerritoryEvent()
-    data class Deleted(val id: String) : TerritoryEvent()
 }
 ```
 
@@ -299,6 +390,7 @@ aa464463-dc33-4ba3-8537-d4c089f4cc05
 
 ```
 Сервер: 93.183.74.141 (VPS)
+Удалённая папка: /opt/territorywars
 Docker Compose: server/docker-compose.yml
   - tw_postgres (PostGIS)
   - tw_redis
@@ -309,6 +401,17 @@ Docker Compose: server/docker-compose.yml
   server/deploy.sh           — сборка и перезапуск контейнеров
   server/deploy-to-server.sh — rsync + deploy на сервер
   deploy-admin.sh            — сборка и деплой admin панели
+```
+
+### Деплой изменений на сервер (быстрый способ)
+```bash
+# 1. Загрузить изменённый файл
+scp -i "C:/Users/Илья/Downloads/runterritory-api.pem" -o StrictHostKeyChecking=no \
+  server/src/routes/clans.ts root@93.183.74.141:/opt/territorywars/src/routes/clans.ts
+
+# 2. Пересобрать и перезапустить API
+ssh -i "C:/Users/Илья/Downloads/runterritory-api.pem" -o StrictHostKeyChecking=no root@93.183.74.141 \
+  "cd /opt/territorywars && docker compose build api && docker compose up -d api"
 ```
 
 ### Nginx конфиг (ключевое)
@@ -322,20 +425,22 @@ Docker Compose: server/docker-compose.yml
 
 ## Сборка APK
 
-Открыть в **Android Studio**, меню **Build → Build Bundle(s) / APK(s) → Build APK(s)**.
+Открыть в **Android Studio**, нажать **≡ (гамбургер-меню) → Build → Build Bundle(s) / APK(s) → Build APK(s)**.
 APK окажется в `app/build/outputs/apk/debug/app-debug.apk`.
+**НЕ использовать** `app/build/intermediates/` — там неполный файл.
+
 Gradle: `./gradlew assembleDebug` из папки `TerritoryWars/`.
 
 ---
 
-## Известные баги (на 2026-04-23)
+## Известные баги (актуально на 2026-04-23)
 
 | ID | Файл | Описание |
 |----|------|----------|
-| BUG-06 | `ClanViewModel.kt:168-180` | Двойной `response.body()!!` — риск NPE |
+| BUG-06 | `ClanViewModel.kt` | Двойной `response.body()!!` — риск NPE |
 | BUG-07 | Profile/Leaderboard vs Clan | Несовместимые единицы площади (км² vs га) |
 | BUG-08 | `TokenAuthenticator.kt` | Создаёт новый Retrofit/OkHttp на каждый 401 |
-| BUG-09 | `ClanScreen.kt:321` | Показывает `members.size` вместо `clan.membersCount` |
+| BUG-09 | `ClanScreen.kt` | Показывает `members.size` вместо `clan.membersCount` |
 
 ---
 
@@ -345,19 +450,23 @@ Gradle: `./gradlew assembleDebug` из папки `TerritoryWars/`.
 - [x] GPS-захват территорий (обход по периметру)
 - [x] PostGIS полигоны, валидация площади
 - [x] Anti-cheat по скорости GPS
-- [x] Слияние (merge) своих перекрывающихся территорий
+- [x] Слияние (merge) своих перекрывающихся территорий (исправлен баг: теперь сохраняется настоящая union-геометрия)
 - [x] **Захват чужих территорий** — полный и частичный (ST_Difference + ST_Dump)
+- [x] **Захват самопересекающихся маршрутов** — ST_MakeValid разбивает на несколько областей, каждая захватывается отдельно
 - [x] Real-time обновления через Socket.IO (territory_updated / territory_deleted)
 - [x] SocketManager на клиенте — SharedFlow событий
 - [x] Клановая система (создание, вступление, выход, исключение, удаление клана лидером)
 - [x] Заявки на вступление в клан: игрок → запрос → FCM push лидеру → лидер принимает/отклоняет в экране Клан
-- [x] Бейдж на вкладке «Клан» (BadgedBox) — показывает количество непрочитанных заявок
-- [x] Принятие заявки объединяет территории вступившего с территориями клана (UPDATE territories SET clan_id)
+- [x] Бейдж на вкладке «Клан» (BadgedBox) — количество непрочитанных заявок
+- [x] При принятии заявки: территории игрока автоматически переходят в клан
 - [x] Рейтинг игроков
 - [x] Профиль с аватаром, цветом, статистикой
 - [x] GpsTrackingService (foreground service)
 - [x] Firebase push-уведомления (FCM)
 - [x] Административная веб-панель
+- [x] Компактный bottom nav (60dp, иконки 24dp, кастомный Row вместо Material3 NavigationBar)
+- [x] Панель захвата (Дистанция/Время/До старта) — внизу экрана, выезжает снизу
+- [x] GPS кнопка поднимается над панелью захвата (170dp от низа)
 
 ---
 
@@ -377,6 +486,20 @@ WKT и GeoJSON используют `[lng, lat]`, Yandex MapKit использу
 `ST_Difference` может вернуть MULTIPOLYGON. В колонку `geometry(Polygon, 4326)` нельзя записать мультиполигон.
 Решение: `ST_Dump` разбивает на части, фильтруем только `ST_Polygon` с площадью >= 100 м².
 
+### Самопересекающиеся маршруты (figure-8, петли)
+Путь вида «восьмёрка» создаёт самопересекающийся полигон.
+`ST_IsValid` = false → раньше отклонялось.
+Теперь: `ST_MakeValid(ST_GeomFromText(wkt))` → MULTIPOLYGON → `ST_Dump` → несколько POLYGON → каждый обрабатывается как отдельный захват.
+
+### UUID vs text в Prisma raw SQL
+Prisma отправляет строковые параметры как `text`. Сравнение с UUID-колонкой нужно делать кастом колонки:
+```sql
+WHERE clan_id::text = ${clanId}   -- ✅
+WHERE id::text = ${userId}        -- ✅
+SET clan_id = ${clanId}::uuid     -- ✅ (для SET)
+WHERE clan_id = ${clanId}::uuid   -- ❌ ошибка "operator does not exist: text = uuid"
+```
+
 ### TokenDataStore (DataStore Preferences)
 ```kotlin
 val accessToken: Flow<String?>
@@ -387,6 +510,9 @@ val playerMarker: Flow<Int>    // id маркера игрока на карте
 ### Аутентификация HTTP (Android)
 - `AuthInterceptor` добавляет `Authorization: Bearer <accessToken>` к каждому запросу
 - `TokenAuthenticator` — при 401 вызывает `/auth/refresh`, получает новый access token
+
+### Хук READ-BEFORE-EDIT
+В проекте настроен хук, который срабатывает перед каждым Edit. Это только напоминание — не блокировка. Файл будет отредактирован если он уже читался в сессии.
 
 ---
 
@@ -404,12 +530,19 @@ Content-Type: application/json
   ]
 }
 
-Response:
-{
-  "success": true,
-  "territory": { "id": "...", "polygon": [[lng,lat],...], "area_m2": 3500, ... },
-  "merged": false,
-  "conquered": 1,
-  "error": null
-}
+Response (одна область):
+{ "success": true, "territory": {...}, "merged": false, "conquered": 0, "error": null }
+
+Response (самопересекающийся маршрут — 2 области):
+{ "success": true, "territory": {...область A...}, "merged": true, "conquered": 0, "error": null }
+// Область B приходит отдельно через WebSocket: territory_updated
+```
+
+---
+
+## GitHub репозиторий
+
+```
+https://github.com/Kembri90-code/TerritoryWars5
+Ветка: main
 ```
