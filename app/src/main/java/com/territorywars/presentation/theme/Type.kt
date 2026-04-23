@@ -2,92 +2,122 @@ package com.territorywars.presentation.theme
 
 import androidx.compose.material3.Typography
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.googlefonts.Font
+import androidx.compose.ui.text.googlefonts.GoogleFont
 import androidx.compose.ui.unit.sp
+import com.territorywars.R
 
-// Используем системный шрифт (sans-serif) — Roboto на Android
+private val provider = GoogleFont.Provider(
+    providerAuthority = "com.google.android.gms.fonts",
+    providerPackage   = "com.google.android.gms",
+    certificates      = R.array.com_google_android_gms_fonts_certs,
+)
+
+val PlusJakartaSans = FontFamily(
+    Font(GoogleFont("Plus Jakarta Sans"), provider, weight = FontWeight.Normal),
+    Font(GoogleFont("Plus Jakarta Sans"), provider, weight = FontWeight.Medium),
+    Font(GoogleFont("Plus Jakarta Sans"), provider, weight = FontWeight.SemiBold),
+    Font(GoogleFont("Plus Jakarta Sans"), provider, weight = FontWeight.Bold),
+    Font(GoogleFont("Plus Jakarta Sans"), provider, weight = FontWeight.ExtraBold),
+)
+
+val DmMono = FontFamily(
+    Font(GoogleFont("DM Mono"), provider, weight = FontWeight.Normal),
+    Font(GoogleFont("DM Mono"), provider, weight = FontWeight.Medium),
+)
+
 val AppTypography = Typography(
-    // Заголовки экранов
     headlineLarge = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Bold,
-        fontSize = 28.sp,
-        lineHeight = 36.sp,
-        letterSpacing = 0.sp
+        fontFamily   = PlusJakartaSans,
+        fontWeight   = FontWeight.ExtraBold,
+        fontSize     = 28.sp,
+        lineHeight   = 36.sp,
+        letterSpacing = 0.sp,
     ),
     headlineMedium = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 22.sp,
-        lineHeight = 30.sp,
-        letterSpacing = 0.sp
+        fontFamily   = PlusJakartaSans,
+        fontWeight   = FontWeight.ExtraBold,
+        fontSize     = 22.sp,
+        lineHeight   = 30.sp,
+        letterSpacing = 0.sp,
     ),
     headlineSmall = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 18.sp,
-        lineHeight = 26.sp,
-        letterSpacing = 0.sp
+        fontFamily   = PlusJakartaSans,
+        fontWeight   = FontWeight.Bold,
+        fontSize     = 18.sp,
+        lineHeight   = 26.sp,
+        letterSpacing = 0.sp,
     ),
-    // Заголовки секций
     titleLarge = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Medium,
-        fontSize = 16.sp,
-        lineHeight = 24.sp,
-        letterSpacing = 0.15.sp
+        fontFamily   = PlusJakartaSans,
+        fontWeight   = FontWeight.Bold,
+        fontSize     = 16.sp,
+        lineHeight   = 24.sp,
+        letterSpacing = 0.sp,
     ),
     titleMedium = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Medium,
-        fontSize = 14.sp,
-        lineHeight = 20.sp,
-        letterSpacing = 0.1.sp
+        fontFamily   = PlusJakartaSans,
+        fontWeight   = FontWeight.SemiBold,
+        fontSize     = 15.sp,
+        lineHeight   = 22.sp,
+        letterSpacing = 0.sp,
     ),
-    // Основной текст
+    titleSmall = TextStyle(
+        fontFamily   = PlusJakartaSans,
+        fontWeight   = FontWeight.SemiBold,
+        fontSize     = 14.sp,
+        lineHeight   = 20.sp,
+        letterSpacing = 0.sp,
+    ),
     bodyLarge = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Normal,
-        fontSize = 16.sp,
-        lineHeight = 24.sp,
-        letterSpacing = 0.5.sp
+        fontFamily   = PlusJakartaSans,
+        fontWeight   = FontWeight.Normal,
+        fontSize     = 15.sp,
+        lineHeight   = 24.sp,
+        letterSpacing = 0.sp,
     ),
     bodyMedium = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Normal,
-        fontSize = 14.sp,
-        lineHeight = 20.sp,
-        letterSpacing = 0.25.sp
+        fontFamily   = PlusJakartaSans,
+        fontWeight   = FontWeight.Normal,
+        fontSize     = 14.sp,
+        lineHeight   = 20.sp,
+        letterSpacing = 0.sp,
     ),
     bodySmall = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Normal,
-        fontSize = 12.sp,
-        lineHeight = 16.sp,
-        letterSpacing = 0.4.sp
+        fontFamily   = PlusJakartaSans,
+        fontWeight   = FontWeight.Normal,
+        fontSize     = 12.sp,
+        lineHeight   = 18.sp,
+        letterSpacing = 0.sp,
     ),
-    // Кнопки
     labelLarge = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 16.sp,
-        lineHeight = 24.sp,
-        letterSpacing = 0.5.sp
+        fontFamily   = PlusJakartaSans,
+        fontWeight   = FontWeight.Bold,
+        fontSize     = 15.sp,
+        lineHeight   = 24.sp,
+        letterSpacing = 0.2.sp,
     ),
     labelMedium = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Medium,
-        fontSize = 12.sp,
-        lineHeight = 16.sp,
-        letterSpacing = 0.5.sp
+        fontFamily   = PlusJakartaSans,
+        fontWeight   = FontWeight.SemiBold,
+        fontSize     = 13.sp,
+        lineHeight   = 18.sp,
+        letterSpacing = 0.sp,
     ),
     labelSmall = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Medium,
-        fontSize = 10.sp,
-        lineHeight = 14.sp,
-        letterSpacing = 0.5.sp
-    )
+        fontFamily   = PlusJakartaSans,
+        fontWeight   = FontWeight.Bold,
+        fontSize     = 10.sp,
+        lineHeight   = 14.sp,
+        letterSpacing = 1.2.sp,
+    ),
+)
+
+val MonoStyle = TextStyle(
+    fontFamily   = DmMono,
+    fontWeight   = FontWeight.Medium,
+    fontSize     = 19.sp,
+    letterSpacing = (-0.5).sp,
 )

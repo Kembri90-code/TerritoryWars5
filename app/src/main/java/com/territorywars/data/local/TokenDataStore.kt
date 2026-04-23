@@ -18,9 +18,11 @@ class TokenDataStore @Inject constructor(
 ) {
     private val ACCESS_TOKEN = stringPreferencesKey("access_token")
     private val REFRESH_TOKEN = stringPreferencesKey("refresh_token")
+    private val PLAYER_MARKER = stringPreferencesKey("player_marker")
 
     val accessToken: Flow<String?> = context.dataStore.data.map { it[ACCESS_TOKEN] }
     val refreshToken: Flow<String?> = context.dataStore.data.map { it[REFRESH_TOKEN] }
+    val playerMarker: Flow<String?> = context.dataStore.data.map { it[PLAYER_MARKER] }
 
     suspend fun saveTokens(accessToken: String, refreshToken: String) {
         context.dataStore.edit { prefs ->
@@ -37,5 +39,11 @@ class TokenDataStore @Inject constructor(
 
     suspend fun clearTokens() {
         context.dataStore.edit { it.clear() }
+    }
+
+    suspend fun savePlayerMarker(markerId: String) {
+        context.dataStore.edit { prefs ->
+            prefs[PLAYER_MARKER] = markerId
+        }
     }
 }

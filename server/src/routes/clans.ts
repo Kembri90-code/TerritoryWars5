@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { prisma } from '../prisma';
 import { requireAuth } from '../middleware/auth';
+import { NotificationService } from '../services/NotificationService';
 
 const router = Router();
 
@@ -175,12 +176,12 @@ router.post('/:id/join', requireAuth, async (req: Request, res: Response) => {
       await tx.$executeRaw`
         UPDATE clans
         SET total_area_m2 = (
-          SELECT COALESCE(SUM(area_m2), 0) FROM territories WHERE clan_id = ${clanId}
+          SELECT COALESCE(SUM(area_m2), 0) FROM territories WHERE clan_id::text = ${clanId}
         ),
         territories_count = (
-          SELECT COUNT(*) FROM territories WHERE clan_id = ${clanId}
+          SELECT COUNT(*) FROM territories WHERE clan_id::text = ${clanId}
         )
-        WHERE id = ${clanId}
+        WHERE id::text = ${clanId}
       `;
     });
 
@@ -287,6 +288,33 @@ router.delete('/:id/members/:userId', requireAuth, async (req: Request, res: Res
   }
 });
 
+// DELETE /clans/:id — leader deletes the clan; all members lose their clan
+router.delete('/:id', requireAuth, async (req: Request, res: Response) => {
+  const userId = req.user!.userId;
+  const clanId = req.params.id;
+
+  try {
+    const clan = await prisma.clan.findUnique({ where: { id: clanId } });
+    if (!clan) { res.status(404).json({ error: 'Clan not found' }); return; }
+    if (clan.leaderId !== userId) { res.status(403).json({ error: 'Only the clan leader can delete the clan' }); return; }
+
+    await prisma.$transaction(async (tx) => {
+      // Be explicit with cleanup: production DB constraints may differ from Prisma schema
+      // (e.g. missing ON DELETE CASCADE/SET NULL on legacy migrations).
+      await tx.user.updateMany({ where: { clanId }, data: { clanId: null } });
+      await tx.$executeRaw`UPDATE territories SET clan_id = NULL WHERE clan_id::text = ${clanId}`;
+      await tx.clanJoinRequest.deleteMany({ where: { clanId } });
+      await tx.clanMember.deleteMany({ where: { clanId } });
+      await tx.clan.delete({ where: { id: clanId } });
+    });
+
+    res.status(204).send();
+  } catch (err) {
+    console.error('[Clans] delete error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // GET /clans/:id/territories
 router.get('/:id/territories', requireAuth, async (req: Request, res: Response) => {
   try {
@@ -323,6 +351,128 @@ router.get('/:id/territories', requireAuth, async (req: Request, res: Response) 
     res.json(territories);
   } catch (err) {
     console.error('[Clans] getTerritories error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /clans/:id/request — player sends join request
+router.post('/:id/request', requireAuth, async (req: Request, res: Response) => {
+  const userId = req.user!.userId;
+  const clanId = req.params.id;
+  try {
+    const [user, clan] = await Promise.all([
+      prisma.user.findUnique({ where: { id: userId } }),
+      prisma.clan.findUnique({ where: { id: clanId }, include: { _count: { select: { members: true } } } }),
+    ]);
+    if (!user) { res.status(404).json({ error: 'User not found' }); return; }
+    if (user.clanId) { res.status(409).json({ error: 'You are already in a clan' }); return; }
+    if (!clan) { res.status(404).json({ error: 'Clan not found' }); return; }
+    if (clan._count.members >= clan.maxMembers) { res.status(403).json({ error: 'Clan is full' }); return; }
+
+    const existing = await prisma.clanJoinRequest.findUnique({
+      where: { userId_clanId: { userId, clanId } },
+    });
+    if (existing) { res.status(409).json({ error: 'Request already sent' }); return; }
+
+    await prisma.clanJoinRequest.create({ data: { userId, clanId } });
+    await NotificationService.notifyClanJoinRequest(clan.leaderId, user.username, clanId, clan.name);
+
+    res.status(201).json({ success: true });
+  } catch (err) {
+    console.error('[Clans] request error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /clans/:id/requests — pending requests (leader only)
+router.get('/:id/requests', requireAuth, async (req: Request, res: Response) => {
+  const userId = req.user!.userId;
+  const clanId = req.params.id;
+  try {
+    const clan = await prisma.clan.findUnique({ where: { id: clanId } });
+    if (!clan) { res.status(404).json({ error: 'Clan not found' }); return; }
+    if (clan.leaderId !== userId) { res.status(403).json({ error: 'Only the clan leader can view requests' }); return; }
+
+    const requests = await prisma.clanJoinRequest.findMany({
+      where: { clanId },
+      include: {
+        user: { select: { id: true, username: true, avatarUrl: true, color: true, totalAreaM2: true } },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    res.json(requests.map((r) => ({
+      user_id: r.user.id,
+      username: r.user.username,
+      avatar_url: r.user.avatarUrl ?? null,
+      color: r.user.color,
+      total_area_m2: r.user.totalAreaM2,
+      created_at: r.createdAt.toISOString(),
+    })));
+  } catch (err) {
+    console.error('[Clans] getRequests error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /clans/:id/requests/:userId/accept — leader accepts request
+router.post('/:id/requests/:userId/accept', requireAuth, async (req: Request, res: Response) => {
+  const leaderId = req.user!.userId;
+  const clanId = req.params.id;
+  const applicantId = req.params.userId;
+  try {
+    const clan = await prisma.clan.findUnique({
+      where: { id: clanId },
+      include: { _count: { select: { members: true } } },
+    });
+    if (!clan) { res.status(404).json({ error: 'Clan not found' }); return; }
+    if (clan.leaderId !== leaderId) { res.status(403).json({ error: 'Only the clan leader can accept requests' }); return; }
+    if (clan._count.members >= clan.maxMembers) { res.status(403).json({ error: 'Clan is full' }); return; }
+
+    const applicant = await prisma.user.findUnique({ where: { id: applicantId } });
+    if (!applicant) { res.status(404).json({ error: 'User not found' }); return; }
+    if (applicant.clanId) {
+      await prisma.clanJoinRequest.deleteMany({ where: { userId: applicantId, clanId } });
+      res.status(409).json({ error: 'User is already in another clan' }); return;
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.clanMember.create({ data: { userId: applicantId, clanId, role: 'MEMBER' } });
+      await tx.user.update({ where: { id: applicantId }, data: { clanId } });
+      // Assign all existing territories of the new member to the clan
+      await tx.$executeRaw`UPDATE territories SET clan_id = ${clanId}::uuid WHERE owner_id::text = ${applicantId}`;
+      // Remove this and any other pending requests from this user
+      await tx.clanJoinRequest.deleteMany({ where: { userId: applicantId } });
+      // Recalculate clan stats
+      await tx.$executeRaw`
+        UPDATE clans
+        SET total_area_m2     = (SELECT COALESCE(SUM(area_m2), 0) FROM territories WHERE clan_id::text = ${clanId}),
+            territories_count = (SELECT COUNT(*)                  FROM territories WHERE clan_id::text = ${clanId})
+        WHERE id::text = ${clanId}
+      `;
+    });
+
+    res.status(204).send();
+  } catch (err) {
+    console.error('[Clans] acceptRequest error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// DELETE /clans/:id/requests/:userId — leader declines request
+router.delete('/:id/requests/:userId', requireAuth, async (req: Request, res: Response) => {
+  const leaderId = req.user!.userId;
+  const clanId = req.params.id;
+  const applicantId = req.params.userId;
+  try {
+    const clan = await prisma.clan.findUnique({ where: { id: clanId } });
+    if (!clan) { res.status(404).json({ error: 'Clan not found' }); return; }
+    if (clan.leaderId !== leaderId) { res.status(403).json({ error: 'Only the clan leader can decline requests' }); return; }
+
+    await prisma.clanJoinRequest.deleteMany({ where: { userId: applicantId, clanId } });
+    res.status(204).send();
+  } catch (err) {
+    console.error('[Clans] declineRequest error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

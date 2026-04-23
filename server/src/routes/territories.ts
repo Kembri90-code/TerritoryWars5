@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { prisma } from '../prisma';
 import { requireAuth } from '../middleware/auth';
-import { emitTerritoryUpdate } from '../ws/socket';
+import { emitTerritoryDeleted, emitTerritoryUpdate } from '../ws/socket';
 
 const router = Router();
 
@@ -204,21 +204,105 @@ router.post('/capture', requireAuth, async (req: Request, res: Response) => {
       return;
     }
 
-    // Check for overlapping territories owned by others
-    const overlaps = await prisma.$queryRaw<any[]>`
-      SELECT t.id, t.owner_id
+    // Find all enemy territories that overlap with the new polygon
+    const enemyOverlaps = await prisma.$queryRaw<any[]>`
+      SELECT t.id, t.owner_id, t.clan_id, t.area_m2::float AS area_m2
       FROM territories t
       WHERE t.owner_id != ${userId}
-        AND ST_Intersects(
-          t.polygon,
-          ST_GeomFromText(${wkt}, 4326)
-        )
-      LIMIT 1
+        AND ST_Intersects(t.polygon, ST_GeomFromText(${wkt}, 4326))
     `;
 
-    if (overlaps.length > 0) {
-      res.status(409).json({ success: false, error: 'Territory overlaps with another player', territory: null, merged: false });
-      return;
+    let conqueredCount = 0;
+
+    for (const enemy of enemyOverlaps) {
+      const oldArea: number = parseFloat(enemy.area_m2);
+
+      // Get the largest remaining piece of enemy territory after clipping
+      const pieces = await prisma.$queryRaw<any[]>`
+        SELECT
+          ST_AsText((dp).geom)                   AS piece_wkt,
+          ST_Area((dp).geom::geography)           AS piece_area,
+          ST_Perimeter((dp).geom::geography)      AS piece_perimeter
+        FROM (
+          SELECT ST_Dump(
+            ST_MakeValid(ST_Difference(
+              (SELECT polygon FROM territories WHERE id = ${enemy.id}),
+              ST_GeomFromText(${wkt}, 4326)
+            ))
+          ) AS dp
+        ) AS dumped
+        WHERE ST_GeometryType((dp).geom) = 'ST_Polygon'
+          AND ST_Area((dp).geom::geography) >= 100
+        ORDER BY piece_area DESC
+        LIMIT 1
+      `;
+
+      conqueredCount++;
+
+      if (pieces.length === 0) {
+        // Full capture: no valid remainder — delete enemy territory
+        await prisma.$executeRaw`DELETE FROM territories WHERE id = ${enemy.id}`;
+        emitTerritoryDeleted(enemy.id);
+
+        await prisma.user.update({
+          where: { id: enemy.owner_id },
+          data: {
+            totalAreaM2: { decrement: oldArea },
+            territoriesCount: { decrement: 1 },
+          },
+        });
+
+        if (enemy.clan_id) {
+          await prisma.$executeRaw`
+            UPDATE clans
+            SET total_area_m2 = (SELECT COALESCE(SUM(area_m2), 0) FROM territories WHERE clan_id = ${enemy.clan_id}),
+                territories_count = (SELECT COUNT(*) FROM territories WHERE clan_id = ${enemy.clan_id})
+            WHERE id = ${enemy.clan_id}
+          `;
+        }
+      } else {
+        // Partial capture: trim enemy territory to the largest remaining piece
+        const piece = pieces[0];
+        const newArea: number = parseFloat(piece.piece_area);
+        const areaLost = oldArea - newArea;
+
+        await prisma.$executeRaw`
+          UPDATE territories
+          SET polygon    = ST_GeomFromText(${piece.piece_wkt}, 4326),
+              area_m2    = ${newArea},
+              perimeter_m = ${parseFloat(piece.piece_perimeter)},
+              updated_at = NOW()
+          WHERE id = ${enemy.id}
+        `;
+
+        await prisma.user.update({
+          where: { id: enemy.owner_id },
+          data: { totalAreaM2: { decrement: areaLost } },
+        });
+
+        if (enemy.clan_id) {
+          await prisma.$executeRaw`
+            UPDATE clans
+            SET total_area_m2 = (SELECT COALESCE(SUM(area_m2), 0) FROM territories WHERE clan_id = ${enemy.clan_id}),
+                territories_count = (SELECT COUNT(*) FROM territories WHERE clan_id = ${enemy.clan_id})
+            WHERE id = ${enemy.clan_id}
+          `;
+        }
+
+        const [updatedRow] = await prisma.$queryRaw<any[]>`
+          SELECT
+            t.id, t.owner_id, t.clan_id, t.area_m2, t.perimeter_m,
+            t.captured_at, t.updated_at,
+            ST_AsGeoJSON(t.polygon)::json AS geojson,
+            u.username AS owner_username, u.color AS owner_color,
+            c.color AS clan_color
+          FROM territories t
+          JOIN users u ON u.id = t.owner_id
+          LEFT JOIN clans c ON c.id = t.clan_id
+          WHERE t.id = ${enemy.id}
+        `;
+        emitTerritoryUpdate(rowToTerritory(updatedRow));
+      }
     }
 
     // Check if this overlaps with user's own territories (merge)
@@ -364,7 +448,7 @@ router.post('/capture', requireAuth, async (req: Request, res: Response) => {
     // Broadcast via WebSocket
     emitTerritoryUpdate(territory);
 
-    res.json({ success: true, territory, merged, error: null });
+    res.json({ success: true, territory, merged, conquered: conqueredCount, error: null });
   } catch (err) {
     console.error('[Territories] capture error:', err);
     res.status(500).json({ success: false, error: 'Internal server error', territory: null, merged: false });

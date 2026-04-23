@@ -28,7 +28,7 @@ interface TerritoryDao {
     suspend fun getById(id: String): TerritoryEntity?
 
     @Query("SELECT * FROM territories ORDER BY capturedAtMs DESC LIMIT :limit")
-    fun getAllFlow(limit: Int = 1000): Flow<List<TerritoryEntity>>
+    fun getAllFlow(limit: Int): Flow<List<TerritoryEntity>>
 
     @Query("SELECT * FROM territories WHERE ownerId = :userId ORDER BY capturedAtMs DESC")
     fun getUserTerritoriesFlow(userId: String): Flow<List<TerritoryEntity>>
@@ -43,23 +43,22 @@ interface TerritoryDao {
 // Extension для конвертации
 fun TerritoryEntity.toDomain(): Territory {
     val points = try {
-        // Простой парсинг JSON массива координат
-        val json = polygonJson
-        emptyList<GeoPoint>() // Упрощено для примера
+        emptyList<GeoPoint>()
     } catch (e: Exception) {
         emptyList()
     }
-
     return Territory(
         id = id,
         ownerId = ownerId,
         ownerUsername = ownerUsername,
+        ownerColor = color,
+        clanId = null,
+        clanColor = null,
+        polygon = points,
         areaM2 = areaM2,
         perimeterM = perimeterM,
-        color = color,
-        polygon = points,
-        capturedAtMs = capturedAtMs,
-        updatedAtMs = updatedAtMs
+        capturedAt = java.util.Date(capturedAtMs).toString(),
+        updatedAt = java.util.Date(updatedAtMs).toString()
     )
 }
 
@@ -70,9 +69,9 @@ fun Territory.toEntity(): TerritoryEntity {
         ownerUsername = ownerUsername,
         areaM2 = areaM2,
         perimeterM = perimeterM,
-        color = color,
-        capturedAtMs = capturedAtMs,
-        updatedAtMs = updatedAtMs,
+        color = ownerColor,
+        capturedAtMs = 0L,
+        updatedAtMs = 0L,
         polygonJson = "[]"
     )
 }

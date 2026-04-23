@@ -1,7 +1,12 @@
 package com.territorywars.presentation.auth
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -14,23 +19,21 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusDirection
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.*
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.territorywars.presentation.components.AppTextField
 import com.territorywars.presentation.components.PrimaryButton
-import com.territorywars.presentation.theme.Error
-import com.territorywars.presentation.theme.Primary
-import com.territorywars.presentation.theme.Success
-import com.territorywars.presentation.theme.Warning
+import com.territorywars.presentation.components.TerritoryLogo
+import com.territorywars.presentation.theme.PlusJakartaSans
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RegisterScreen(
     onNavigateBack: () -> Unit,
@@ -40,50 +43,77 @@ fun RegisterScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val focusManager = LocalFocusManager.current
 
+    val primary    = MaterialTheme.colorScheme.primary
+    val bg         = MaterialTheme.colorScheme.background
+    val surface    = MaterialTheme.colorScheme.surface
+    val outline    = MaterialTheme.colorScheme.outline
+    val outlineVar = MaterialTheme.colorScheme.outlineVariant
+    val onBg       = MaterialTheme.colorScheme.onBackground
+    val onSurfVar  = MaterialTheme.colorScheme.onSurfaceVariant
+    val errorColor = MaterialTheme.colorScheme.error
+    val warning    = MaterialTheme.colorScheme.tertiary
+
     LaunchedEffect(state.isSuccess) {
         if (state.isSuccess) onRegisterSuccess()
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Регистрация") },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Outlined.ArrowBack, contentDescription = "Назад")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
-                )
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(bg),
+    ) {
+        // ── Top bar ───────────────────────────────────────────────────────────
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(surface)
+                .statusBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(38.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .border(1.dp, outline, RoundedCornerShape(10.dp))
+                    .clickable { onNavigateBack() },
+            ) {
+                Icon(Icons.Outlined.ArrowBack, contentDescription = "Назад", tint = onBg, modifier = Modifier.size(18.dp))
+            }
+            TerritoryLogo(modifier = Modifier.size(26.dp), color = primary)
+            Text(
+                text = "Регистрация",
+                fontSize = 17.sp,
+                fontWeight = FontWeight.ExtraBold,
+                fontFamily = PlusJakartaSans,
+                color = onBg,
             )
         }
-    ) { padding ->
+        HorizontalDivider(color = outlineVar)
+
+        // ── Form ──────────────────────────────────────────────────────────────
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background)
-                .padding(padding)
-                .padding(horizontal = 24.dp)
                 .verticalScroll(rememberScrollState())
-                .imePadding(),
-            horizontalAlignment = Alignment.CenterHorizontally
+                .imePadding()
+                .padding(horizontal = 20.dp, vertical = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // 1. Никнейм
+            // 1. Username
             AppTextField(
                 value = state.username,
                 onValueChange = viewModel::onUsernameChanged,
                 label = "Никнейм",
                 leadingIcon = Icons.Outlined.Person,
                 error = state.usernameError,
-                isValid = state.isUsernameValid,
+                hint = if (state.username.isEmpty()) "3–20 символов" else null,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) })
+                keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
             )
-
-            Spacer(modifier = Modifier.height(12.dp))
 
             // 2. Email
             AppTextField(
@@ -92,57 +122,80 @@ fun RegisterScreen(
                 label = "Email",
                 leadingIcon = Icons.Outlined.Email,
                 error = state.emailError,
-                isValid = state.isEmailValid,
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Email,
-                    imeAction = ImeAction.Next
-                ),
-                keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) })
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next),
+                keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
+            // 3. Password + strength indicator
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                AppTextField(
+                    value = state.password,
+                    onValueChange = viewModel::onPasswordChanged,
+                    label = "Пароль",
+                    leadingIcon = Icons.Outlined.Lock,
+                    isPassword = true,
+                    error = state.passwordError,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Next),
+                    keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
+                )
 
-            // 3. Пароль с индикатором надёжности
-            AppTextField(
-                value = state.password,
-                onValueChange = viewModel::onPasswordChanged,
-                label = "Пароль",
-                leadingIcon = Icons.Outlined.Lock,
-                isPassword = true,
-                error = state.passwordError,
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Password,
-                    imeAction = ImeAction.Next
-                ),
-                keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) })
-            )
-
-            // Индикатор надёжности пароля
-            AnimatedVisibility(visible = state.password.isNotEmpty()) {
-                PasswordStrengthIndicator(strength = state.passwordStrength)
+                AnimatedVisibility(
+                    visible = state.password.isNotEmpty() && state.passwordError == null,
+                    enter = fadeIn(tween(200)),
+                    exit = fadeOut(tween(150)),
+                ) {
+                    val strengthColor = when (state.passwordStrength) {
+                        PasswordStrength.WEAK   -> errorColor
+                        PasswordStrength.MEDIUM -> warning
+                        PasswordStrength.STRONG -> primary
+                    }
+                    val strengthLabel = when (state.passwordStrength) {
+                        PasswordStrength.WEAK   -> "Слабый"
+                        PasswordStrength.MEDIUM -> "Средний"
+                        PasswordStrength.STRONG -> "Надёжный"
+                    }
+                    val progress = when (state.passwordStrength) {
+                        PasswordStrength.WEAK   -> 1
+                        PasswordStrength.MEDIUM -> 2
+                        PasswordStrength.STRONG -> 3
+                    }
+                    Column {
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            repeat(3) { idx ->
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(3.dp)
+                                        .clip(RoundedCornerShape(2.dp))
+                                        .background(if (idx < progress) strengthColor else outline),
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = strengthLabel,
+                            color = strengthColor,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = PlusJakartaSans,
+                        )
+                    }
+                }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // 4. Подтверждение пароля
+            // 4. Confirm password
             AppTextField(
                 value = state.passwordConfirm,
                 onValueChange = viewModel::onPasswordConfirmChanged,
                 label = "Подтвердить пароль",
-                leadingIcon = Icons.Outlined.Lock,
+                leadingIcon = Icons.Outlined.Shield,
                 isPassword = true,
                 error = state.passwordConfirmError,
-                isValid = state.isPasswordConfirmValid,
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Password,
-                    imeAction = ImeAction.Next
-                ),
-                keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) })
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Next),
+                keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // 5. Город (searchable dropdown)
+            // 5. City dropdown
             CityDropdown(
                 query = state.cityQuery,
                 onQueryChanged = viewModel::onCityQueryChanged,
@@ -150,56 +203,31 @@ fun RegisterScreen(
                 selectedCity = state.selectedCity,
                 onCitySelected = viewModel::onCitySelected,
                 error = state.cityError,
-                isLoading = state.isCitiesLoading
+                isLoading = state.isCitiesLoading,
             )
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Ошибка сервера
             AnimatedVisibility(visible = state.serverError != null) {
                 Text(
                     text = state.serverError ?: "",
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.fillMaxWidth()
+                    color = errorColor,
+                    fontSize = 12.sp,
+                    fontFamily = PlusJakartaSans,
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(4.dp))
 
-            // Кнопка «Зарегистрироваться»
             PrimaryButton(
-                text = "Зарегистрироваться",
+                text = "Создать аккаунт",
                 onClick = viewModel::register,
                 isLoading = state.isLoading,
-                enabled = state.isFormValid && !state.isLoading
+                enabled = state.isFormValid && !state.isLoading,
             )
 
-            Spacer(modifier = Modifier.height(40.dp))
+            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.navigationBarsPadding())
         }
-    }
-}
-
-@Composable
-private fun PasswordStrengthIndicator(strength: PasswordStrength) {
-    Column(modifier = Modifier.fillMaxWidth().padding(top = 6.dp, start = 4.dp)) {
-        val (color, label) = when (strength) {
-            PasswordStrength.WEAK -> Error to "Слабый"
-            PasswordStrength.MEDIUM -> Warning to "Средний"
-            PasswordStrength.STRONG -> Success to "Сильный"
-        }
-        LinearProgressIndicator(
-            progress = { when (strength) { PasswordStrength.WEAK -> 0.33f; PasswordStrength.MEDIUM -> 0.66f; PasswordStrength.STRONG -> 1f } },
-            modifier = Modifier.fillMaxWidth().height(4.dp),
-            color = color,
-            trackColor = MaterialTheme.colorScheme.surfaceVariant
-        )
-        Text(
-            text = label,
-            color = color,
-            style = MaterialTheme.typography.labelSmall,
-            modifier = Modifier.padding(top = 2.dp)
-        )
     }
 }
 
@@ -212,19 +240,13 @@ private fun CityDropdown(
     selectedCity: com.territorywars.domain.model.City?,
     onCitySelected: (com.territorywars.domain.model.City) -> Unit,
     error: String?,
-    isLoading: Boolean
+    isLoading: Boolean,
 ) {
     var expanded by remember { mutableStateOf(false) }
 
     ExposedDropdownMenuBox(
         expanded = expanded && cities.isNotEmpty(),
-        onExpandedChange = { newExpanded ->
-            expanded = newExpanded
-            // При открытии — показываем все города (пустой запрос)
-            if (newExpanded && query.isEmpty() && selectedCity == null) {
-                onQueryChanged("")
-            }
-        }
+        onExpandedChange = { expanded = it },
     ) {
         AppTextField(
             value = if (selectedCity != null) selectedCity.name else query,
@@ -236,16 +258,19 @@ private fun CityDropdown(
             leadingIcon = Icons.Outlined.LocationCity,
             error = error,
             isValid = selectedCity != null,
-            modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable)
+            modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable),
         )
 
         if (isLoading) {
-            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            LinearProgressIndicator(
+                modifier = Modifier.fillMaxWidth().height(2.dp),
+                color = MaterialTheme.colorScheme.primary,
+            )
         }
 
         ExposedDropdownMenu(
             expanded = expanded && cities.isNotEmpty(),
-            onDismissRequest = { expanded = false }
+            onDismissRequest = { expanded = false },
         ) {
             cities.forEach { city ->
                 DropdownMenuItem(
@@ -255,14 +280,14 @@ private fun CityDropdown(
                             Text(
                                 city.region,
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     },
                     onClick = {
                         onCitySelected(city)
                         expanded = false
-                    }
+                    },
                 )
             }
         }

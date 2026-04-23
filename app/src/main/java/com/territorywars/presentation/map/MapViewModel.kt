@@ -7,6 +7,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.android.gms.location.*
 import com.territorywars.data.local.TokenDataStore
+import com.territorywars.data.remote.SocketManager
+import com.territorywars.data.remote.TerritoryEvent
+import com.territorywars.data.remote.api.ClanApi
 import com.territorywars.data.remote.api.TerritoryApi
 import com.territorywars.data.remote.api.UserApi
 import com.territorywars.data.remote.dto.CaptureRequest
@@ -30,6 +33,8 @@ import kotlin.math.*
 data class MapState(
     val territories: List<Territory> = emptyList(),
     val myUserId: String? = null,
+    val playerMarker: PlayerMarker = PlayerMarker.DOT,
+    val myColor: String = "#2979FF",
     val isCapturing: Boolean = false,
     val routePoints: List<RoutePoint> = emptyList(),
     val routeDistanceM: Double = 0.0,
@@ -40,7 +45,8 @@ data class MapState(
     val currentLng: Double? = null,
     val notification: String? = null,
     val isLoading: Boolean = false,
-    val lastBbox: String? = null
+    val lastBbox: String? = null,
+    val clanRequestsBadge: Int = 0
 )
 
 private const val CLOSE_RADIUS_M = 15.0
@@ -55,7 +61,9 @@ class MapViewModel @Inject constructor(
     private val fusedLocationClient: FusedLocationProviderClient,
     private val territoryApi: TerritoryApi,
     private val userApi: UserApi,
-    private val tokenDataStore: TokenDataStore
+    private val clanApi: ClanApi,
+    private val tokenDataStore: TokenDataStore,
+    private val socketManager: SocketManager
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(MapState())
@@ -77,11 +85,33 @@ class MapViewModel @Inject constructor(
 
     init {
         loadCurrentUser()
+        connectSocket()
+    }
+
+    private fun connectSocket() {
+        socketManager.connect()
+        viewModelScope.launch {
+            socketManager.territoryEvents.collect { event ->
+                when (event) {
+                    is TerritoryEvent.Updated -> _state.update { s ->
+                        val existing = s.territories.indexOfFirst { it.id == event.territory.id }
+                        if (existing >= 0) {
+                            s.copy(territories = s.territories.toMutableList().also { it[existing] = event.territory })
+                        } else {
+                            s.copy(territories = s.territories + event.territory)
+                        }
+                    }
+                    is TerritoryEvent.Deleted -> _state.update { s ->
+                        s.copy(territories = s.territories.filter { it.id != event.id })
+                    }
+                }
+            }
+        }
     }
 
     private fun buildLocationRequest(intervalMs: Long): LocationRequest {
         return LocationRequest.Builder(
-            Priority.PRIORITY_BALANCED_POWER_ACCURACY,
+            Priority.PRIORITY_HIGH_ACCURACY,
             intervalMs
         )
             .setMinUpdateIntervalMillis((intervalMs / 2).toLong())
@@ -94,11 +124,30 @@ class MapViewModel @Inject constructor(
             try {
                 val response = userApi.getMe()
                 if (response.isSuccessful) {
-                    _state.update { it.copy(myUserId = response.body()!!.id) }
+                    val body = response.body()!!
+                    _state.update { it.copy(myUserId = body.id, myColor = body.color) }
+                    loadClanRequestsBadge(body.clanId)
                 }
             } catch (e: Exception) {
                 Timber.e(e, "Failed to load current user")
             }
+        }
+        viewModelScope.launch {
+            tokenDataStore.playerMarker.collect { id ->
+                _state.update { it.copy(playerMarker = playerMarkerById(id)) }
+            }
+        }
+    }
+
+    private fun loadClanRequestsBadge(clanId: String?) {
+        if (clanId == null) return
+        viewModelScope.launch {
+            try {
+                val resp = clanApi.getClanRequests(clanId)
+                if (resp.isSuccessful) {
+                    _state.update { it.copy(clanRequestsBadge = resp.body()?.size ?: 0) }
+                }
+            } catch (_: Exception) {}
         }
     }
 
@@ -108,8 +157,18 @@ class MapViewModel @Inject constructor(
 
     @SuppressLint("MissingPermission")
     fun startLocationUpdates() {
+        fusedLocationClient.lastLocation.addOnSuccessListener { location ->
+            if (location != null) {
+                _state.update { it.copy(currentLat = location.latitude, currentLng = location.longitude) }
+                centerOnLocation(location.latitude, location.longitude)
+                viewModelScope.launch {
+                    loadTerritoriesInBbox(calculateBbox(location.latitude, location.longitude))
+                }
+            } else {
+                loadTerritoriesInView()
+            }
+        }
         fusedLocationClient.requestLocationUpdates(currentLocationRequest, locationCallback, null)
-        loadTerritoriesInView()
     }
 
     private fun onNewLocation(lat: Double, lng: Double, accuracy: Float) {
@@ -131,7 +190,7 @@ class MapViewModel @Inject constructor(
                 haversineM(lat, lng, newPoints.first().lat, newPoints.first().lng)
             } else Double.MAX_VALUE
 
-            val canFinish = distToStart <= CLOSE_RADIUS_M && newPoints.size >= MIN_POINTS
+            val canFinish = newPoints.size >= MIN_POINTS
 
             _state.update {
                 it.copy(
@@ -229,6 +288,13 @@ class MapViewModel @Inject constructor(
                     val result = response.body()!!
                     if (result.success && result.territory != null) {
                         val newTerritory = result.territory.toDomain()
+                        val notification = when {
+                            result.conquered > 0 && result.merged -> "✓ Территория расширена и захвачена у противника!"
+                            result.conquered > 1 -> "✓ Захвачено ${result.conquered} территорий противника!"
+                            result.conquered == 1 -> "✓ Захвачена территория противника!"
+                            result.merged -> "✓ Территория расширена!"
+                            else -> "✓ Территория захвачена!"
+                        }
                         _state.update { s ->
                             s.copy(
                                 isCapturing = false,
@@ -236,7 +302,7 @@ class MapViewModel @Inject constructor(
                                 canFinishCapture = false,
                                 territories = s.territories + newTerritory,
                                 isLoading = false,
-                                notification = if (result.merged) "Территория расширена!" else "Территория захвачена!"
+                                notification = notification
                             )
                         }
                     } else {
@@ -324,6 +390,7 @@ class MapViewModel @Inject constructor(
         super.onCleared()
         fusedLocationClient.removeLocationUpdates(locationCallback)
         bboxDebounceJob?.cancel()
+        socketManager.disconnect()
     }
 
     private fun haversineM(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {

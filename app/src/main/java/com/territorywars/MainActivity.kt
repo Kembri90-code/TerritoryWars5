@@ -98,19 +98,40 @@ fun TerritoryWarsNavHost() {
                     navController.navigate(Screen.Login.route) {
                         popUpTo(0) { inclusive = true }
                     }
-                }
+                },
+                onNavigateToMap = {
+                    navController.navigate(Screen.Map.route) {
+                        popUpTo(Screen.Map.route) { inclusive = false }
+                    }
+                },
+                onNavigateToLeaderboard = { navController.navigate(Screen.Leaderboard.route) },
+                onNavigateToClan = { navController.navigate(Screen.Clan.route) },
             )
         }
 
         composable(Screen.Leaderboard.route) {
             LeaderboardScreen(
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToMap = {
+                    navController.navigate(Screen.Map.route) {
+                        popUpTo(Screen.Map.route) { inclusive = false }
+                    }
+                },
+                onNavigateToProfile = { navController.navigate(Screen.Profile.route) },
+                onNavigateToClan = { navController.navigate(Screen.Clan.route) },
             )
         }
 
         composable(Screen.Clan.route) {
             ClanScreen(
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToMap = {
+                    navController.navigate(Screen.Map.route) {
+                        popUpTo(Screen.Map.route) { inclusive = false }
+                    }
+                },
+                onNavigateToProfile = { navController.navigate(Screen.Profile.route) },
+                onNavigateToLeaderboard = { navController.navigate(Screen.Leaderboard.route) },
             )
         }
     }

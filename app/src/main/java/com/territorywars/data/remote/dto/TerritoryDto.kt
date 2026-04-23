@@ -52,5 +52,6 @@ data class CaptureResponse(
     @SerializedName("success") val success: Boolean,
     @SerializedName("territory") val territory: TerritoryDto?,
     @SerializedName("merged") val merged: Boolean,
+    @SerializedName("conquered") val conquered: Int = 0,
     @SerializedName("error") val error: String?
 )

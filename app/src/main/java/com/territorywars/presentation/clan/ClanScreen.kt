@@ -1,6 +1,7 @@
 package com.territorywars.presentation.clan
 
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -18,11 +19,15 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.territorywars.domain.model.Clan
@@ -31,8 +36,11 @@ import com.territorywars.domain.model.ClanMember
 import com.territorywars.domain.model.ClanRole
 import com.territorywars.presentation.components.AppTextField
 import com.territorywars.presentation.components.PrimaryButton
-import com.territorywars.presentation.theme.Primary
-import com.territorywars.presentation.theme.Tertiary
+import com.territorywars.presentation.map.AppBottomNav
+import com.territorywars.presentation.map.AppSnackbar
+import com.territorywars.presentation.theme.DmMono
+import com.territorywars.presentation.theme.PlusJakartaSans
+import com.territorywars.presentation.theme.parseColor
 
 private fun formatArea(m2: Double): String = when {
     m2 < 1_000 -> "${m2.toInt()} м²"
@@ -43,158 +51,437 @@ private fun formatArea(m2: Double): String = when {
 private val CLAN_COLORS = listOf(
     "#E53935", "#FF6D00", "#FFD600", "#00C853",
     "#1DE9B6", "#2979FF", "#D500F9", "#FF4081",
-    "#FF1744", "#6D4C41", "#1565C0", "#FF6D00"
+    "#FF1744", "#6D4C41", "#1565C0", "#7C6EF8"
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ClanScreen(
     onNavigateBack: () -> Unit,
+    onNavigateToMap: () -> Unit,
+    onNavigateToProfile: () -> Unit,
+    onNavigateToLeaderboard: () -> Unit,
     viewModel: ClanViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var showLeaveDialog by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var showRequestDialog by remember { mutableStateOf(false) }
+    var requestTargetClan by remember { mutableStateOf<ClanLeaderboardEntry?>(null) }
 
-    // Snackbar для успехов и ошибок
-    val snackbarHostState = remember { SnackbarHostState() }
+    val primary      = MaterialTheme.colorScheme.primary
+    val bg           = MaterialTheme.colorScheme.background
+    val surface      = MaterialTheme.colorScheme.surface
+    val outlineVar   = MaterialTheme.colorScheme.outlineVariant
+    val onBg         = MaterialTheme.colorScheme.onBackground
+    val errorColor   = MaterialTheme.colorScheme.error
+    val errorCont    = MaterialTheme.colorScheme.errorContainer
+    val primaryCont  = MaterialTheme.colorScheme.primaryContainer
+
+    var snackbarMsg   by remember { mutableStateOf<String?>(null) }
+    var snackbarIsErr by remember { mutableStateOf(false) }
+
     LaunchedEffect(state.successMessage) {
         state.successMessage?.let {
-            snackbarHostState.showSnackbar(it)
+            snackbarMsg = it; snackbarIsErr = false
             viewModel.dismissSuccessMessage()
         }
     }
     LaunchedEffect(state.actionError) {
         state.actionError?.let {
-            snackbarHostState.showSnackbar(it)
+            snackbarMsg = it; snackbarIsErr = true
             viewModel.dismissActionError()
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(if (state.isCreating) "Создать клан" else "Клан")
-                },
-                navigationIcon = {
-                    IconButton(onClick = {
-                        if (state.isCreating) viewModel.hideCreateForm()
-                        else onNavigateBack()
-                    }) {
-                        Icon(Icons.Outlined.ArrowBack, contentDescription = "Назад")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
+    Box(modifier = Modifier.fillMaxSize().background(bg)) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            // ── Top bar ──────────────────────────────────────────────────────
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(surface)
+                    .statusBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(10.dp))
+                        .clickable {
+                            if (state.isCreating) viewModel.hideCreateForm()
+                            else onNavigateBack()
+                        },
+                ) {
+                    Icon(Icons.Outlined.ArrowBack, contentDescription = "Назад", tint = onBg, modifier = Modifier.size(18.dp))
+                }
+                Icon(Icons.Outlined.Groups, contentDescription = null, tint = primary, modifier = Modifier.size(22.dp))
+                Text(
+                    text = if (state.isCreating) "Создать клан" else "Клан",
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontFamily = PlusJakartaSans,
+                    color = onBg,
                 )
-            )
-        },
-        snackbarHost = { SnackbarHost(snackbarHostState) }
-    ) { padding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background)
-                .padding(padding)
-        ) {
-            when {
-                state.isLoading -> {
-                    CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
-                }
-                state.error != null -> {
-                    ErrorState(message = state.error!!, onRetry = viewModel::loadData)
-                }
-                state.isCreating -> {
-                    CreateClanForm(
-                        form = state.createForm,
-                        isLoading = state.isActionLoading,
-                        onNameChanged = viewModel::onCreateNameChanged,
-                        onTagChanged = viewModel::onCreateTagChanged,
-                        onColorChanged = viewModel::onCreateColorChanged,
-                        onDescriptionChanged = viewModel::onCreateDescriptionChanged,
-                        onCreate = viewModel::createClan
-                    )
-                }
-                state.myClan != null -> {
-                    MyClanContent(
-                        clan = state.myClan!!,
-                        members = state.members,
-                        myUserId = state.myUserId,
-                        isActionLoading = state.isActionLoading,
-                        onLeaveClick = { showLeaveDialog = true },
-                        onKickMember = viewModel::kickMember
-                    )
-                }
-                else -> {
-                    NoClanContent(
-                        topClans = state.topClans,
-                        isActionLoading = state.isActionLoading,
-                        onCreateClan = viewModel::showCreateForm,
-                        onJoinClan = viewModel::joinClan
-                    )
+            }
+            HorizontalDivider(color = outlineVar)
+
+            // ── Content ──────────────────────────────────────────────────────
+            Box(modifier = Modifier.weight(1f)) {
+                when {
+                    state.isLoading -> {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(color = primary)
+                        }
+                    }
+                    state.error != null -> {
+                        ClanErrorState(message = state.error!!, onRetry = viewModel::loadData)
+                    }
+                    state.isCreating -> {
+                        CreateClanForm(
+                            form = state.createForm,
+                            isLoading = state.isActionLoading,
+                            primary = primary,
+                            onBg = onBg,
+                            onNameChanged = viewModel::onCreateNameChanged,
+                            onTagChanged = viewModel::onCreateTagChanged,
+                            onColorChanged = viewModel::onCreateColorChanged,
+                            onDescriptionChanged = viewModel::onCreateDescriptionChanged,
+                            onCreate = viewModel::createClan,
+                        )
+                    }
+                    state.myClan != null -> {
+                        MyClanContent(
+                            clan = state.myClan!!,
+                            members = state.members,
+                            joinRequests = state.joinRequests,
+                            myUserId = state.myUserId,
+                            isActionLoading = state.isActionLoading,
+                            primary = primary,
+                            bg = bg,
+                            onLeaveClick = { showLeaveDialog = true },
+                            onDeleteClick = { showDeleteDialog = true },
+                            onKickMember = viewModel::kickMember,
+                            onAcceptRequest = viewModel::acceptJoinRequest,
+                            onDeclineRequest = viewModel::declineJoinRequest,
+                        )
+                    }
+                    else -> {
+                        NoClanContent(
+                            topClans = state.topClans,
+                            isActionLoading = state.isActionLoading,
+                            primary = primary,
+                            onBg = onBg,
+                            onCreateClan = viewModel::showCreateForm,
+                            onClanTapped = { clan ->
+                                requestTargetClan = clan
+                                showRequestDialog = true
+                            },
+                        )
+                    }
                 }
             }
+
+            // ── Bottom nav ───────────────────────────────────────────────────
+            HorizontalDivider(color = outlineVar)
+            AppBottomNav(
+                active = "clan",
+                onNavigate = { dest ->
+                    when (dest) {
+                        "map"         -> onNavigateToMap()
+                        "profile"     -> onNavigateToProfile()
+                        "leaderboard" -> onNavigateToLeaderboard()
+                    }
+                },
+            )
+        }
+
+        // Snackbar
+        snackbarMsg?.let { msg ->
+            AppSnackbar(
+                message = msg,
+                onDismiss = { snackbarMsg = null },
+                primary = primary,
+                errorColor = if (snackbarIsErr) errorColor else primary,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 80.dp, start = 16.dp, end = 16.dp),
+            )
         }
     }
 
-    // Диалог подтверждения выхода из клана
+    // ── Leave dialog ─────────────────────────────────────────────────────────
     if (showLeaveDialog) {
         AlertDialog(
             onDismissRequest = { showLeaveDialog = false },
-            title = { Text("Покинуть клан?") },
-            text = { Text("Вы уверены, что хотите покинуть клан? Это действие необратимо.") },
+            containerColor = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(22.dp),
+            icon = {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier.size(52.dp).clip(CircleShape).background(errorCont),
+                ) {
+                    Icon(Icons.Outlined.Warning, contentDescription = null, tint = errorColor, modifier = Modifier.size(26.dp))
+                }
+            },
+            title = {
+                Text(
+                    "Покинуть клан?",
+                    fontFamily = PlusJakartaSans,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            text = {
+                Text(
+                    "Вы уверены, что хотите покинуть клан? Это действие необратимо.",
+                    fontFamily = PlusJakartaSans,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
             confirmButton = {
                 TextButton(
-                    onClick = {
-                        showLeaveDialog = false
-                        viewModel.leaveClan()
-                    },
-                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                    onClick = { showLeaveDialog = false; viewModel.leaveClan() },
+                    colors = ButtonDefaults.textButtonColors(contentColor = errorColor),
                 ) {
-                    Text("Покинуть")
+                    Text("Покинуть", fontFamily = PlusJakartaSans, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showLeaveDialog = false }) { Text("Отмена") }
-            }
+                TextButton(onClick = { showLeaveDialog = false }) {
+                    Text("Отмена", fontFamily = PlusJakartaSans)
+                }
+            },
+        )
+    }
+
+    // ── Join request dialog ───────────────────────────────────────────────────
+    requestTargetClan?.let { clan ->
+        if (showRequestDialog) {
+            AlertDialog(
+                onDismissRequest = { showRequestDialog = false; requestTargetClan = null },
+                containerColor = MaterialTheme.colorScheme.surface,
+                shape = RoundedCornerShape(22.dp),
+                icon = {
+                    val color = remember(clan.color) { parseColor(clan.color) }
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .size(52.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(color.copy(0.2f))
+                            .border(2.dp, color, RoundedCornerShape(14.dp)),
+                    ) {
+                        Text(clan.tag.take(3), fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, fontFamily = DmMono, color = color)
+                    }
+                },
+                title = {
+                    Text(
+                        "Вступить в клан?",
+                        fontFamily = PlusJakartaSans,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                },
+                text = {
+                    Text(
+                        "Отправить заявку на вступление в клан «${clan.name}»?\nГлава клана должен её одобрить.",
+                        fontFamily = PlusJakartaSans,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            viewModel.requestJoinClan(clan.clanId)
+                            showRequestDialog = false
+                            requestTargetClan = null
+                        },
+                        colors = ButtonDefaults.textButtonColors(contentColor = primary),
+                    ) {
+                        Text("Да", fontFamily = PlusJakartaSans, fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showRequestDialog = false; requestTargetClan = null }) {
+                        Text("Нет", fontFamily = PlusJakartaSans)
+                    }
+                },
+            )
+        }
+    }
+
+    // ── Delete dialog ─────────────────────────────────────────────────────────
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            containerColor = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(22.dp),
+            icon = {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier.size(52.dp).clip(CircleShape).background(errorCont),
+                ) {
+                    Icon(Icons.Outlined.DeleteForever, contentDescription = null, tint = errorColor, modifier = Modifier.size(26.dp))
+                }
+            },
+            title = {
+                Text(
+                    "Удалить клан?",
+                    fontFamily = PlusJakartaSans,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            text = {
+                Text(
+                    "Клан будет удалён навсегда. Все участники останутся без клана. Это действие необратимо.",
+                    fontFamily = PlusJakartaSans,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { showDeleteDialog = false; viewModel.deleteClan() },
+                    colors = ButtonDefaults.textButtonColors(contentColor = errorColor),
+                ) {
+                    Text("Удалить", fontFamily = PlusJakartaSans, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) {
+                    Text("Отмена", fontFamily = PlusJakartaSans)
+                }
+            },
         )
     }
 }
 
-// ====== Экран "Я в клане" ======
+// ── My clan ───────────────────────────────────────────────────────────────────
 
 @Composable
 private fun MyClanContent(
     clan: Clan,
     members: List<ClanMember>,
+    joinRequests: List<ClanJoinRequestItem>,
     myUserId: String?,
     isActionLoading: Boolean,
+    primary: Color,
+    bg: Color,
     onLeaveClick: () -> Unit,
-    onKickMember: (String) -> Unit
+    onDeleteClick: () -> Unit,
+    onKickMember: (String) -> Unit,
+    onAcceptRequest: (String) -> Unit,
+    onDeclineRequest: (String) -> Unit,
 ) {
-    val clanColor = remember(clan.color) {
-        try { Color(android.graphics.Color.parseColor(clan.color).toLong() or 0xFF000000L) }
-        catch (_: Exception) { Primary }
-    }
+    val clanColor = remember(clan.color) { parseColor(clan.color) }
     val amILeader = members.any { it.userId == myUserId && it.role == ClanRole.LEADER }
+    var acceptTarget by remember { mutableStateOf<ClanJoinRequestItem?>(null) }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = 24.dp)
+        contentPadding = PaddingValues(bottom = 24.dp),
     ) {
-        // Заголовок клана
+        // Gradient header
         item {
-            ClanHeader(clan = clan, clanColor = clanColor, membersCount = members.size)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        Brush.verticalGradient(listOf(clanColor.copy(alpha = 0.22f), bg))
+                    )
+                    .padding(horizontal = 20.dp, vertical = 24.dp),
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        // Tag box with glow
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size(60.dp)
+                                .shadow(8.dp, RoundedCornerShape(16.dp), ambientColor = clanColor, spotColor = clanColor)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(clanColor.copy(alpha = 0.2f))
+                                .border(2.dp, clanColor, RoundedCornerShape(16.dp)),
+                        ) {
+                            Text(
+                                text = clan.tag,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                fontFamily = DmMono,
+                                color = clanColor,
+                            )
+                        }
+                        Column {
+                            Text(clan.name, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, fontFamily = PlusJakartaSans, color = MaterialTheme.colorScheme.onSurface)
+                            if (!clan.description.isNullOrBlank()) {
+                                Text(clan.description, fontSize = 13.sp, fontFamily = PlusJakartaSans, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                    }
+
+                    // Stats
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                    ) {
+                        ClanStatCard("Площадь", formatArea(clan.totalAreaM2), clanColor)
+                        ClanStatCard("Участники", "${members.size}/${clan.maxMembers}", clanColor)
+                    }
+                }
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         }
 
-        // Список участников
+        // Join requests section — visible to leader only
+        if (amILeader && joinRequests.isNotEmpty()) {
+            item {
+                Text(
+                    text = "ЗАЯВКИ (${joinRequests.size})",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = PlusJakartaSans,
+                    color = MaterialTheme.colorScheme.error,
+                    letterSpacing = 0.8.sp,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+                )
+            }
+            items(joinRequests) { request ->
+                JoinRequestRow(
+                    request = request,
+                    primary = primary,
+                    onClick = { acceptTarget = request },
+                )
+            }
+            item { HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant) }
+        }
+
+        // Members label
         item {
             Text(
-                text = "Участники (${members.size}/${clan.maxMembers})",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
+                text = "Участники",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = PlusJakartaSans,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                letterSpacing = 0.8.sp,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
-                color = MaterialTheme.colorScheme.onBackground
             )
         }
 
@@ -203,113 +490,139 @@ private fun MyClanContent(
                 member = member,
                 isMe = member.userId == myUserId,
                 canKick = amILeader && member.userId != myUserId && member.role != ClanRole.LEADER,
-                onKick = { onKickMember(member.userId) }
+                primary = primary,
+                onKick = { onKickMember(member.userId) },
             )
         }
 
-        // Кнопка выйти
+        // Action buttons
         item {
             Spacer(modifier = Modifier.height(16.dp))
-            if (!amILeader) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp)
-                ) {
+            Column(
+                modifier = Modifier.padding(horizontal = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                if (!amILeader) {
                     OutlinedButton(
                         onClick = onLeaveClick,
                         enabled = !isActionLoading,
                         modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = MaterialTheme.colorScheme.error
-                        ),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error)
+                        shape = RoundedCornerShape(14.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.5.dp, MaterialTheme.colorScheme.error),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
                     ) {
                         if (isActionLoading) {
-                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.error)
                         } else {
-                            Icon(Icons.Outlined.ExitToApp, contentDescription = null)
+                            Icon(Icons.Outlined.ExitToApp, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Покинуть клан")
+                            Text("Покинуть клан", fontFamily = PlusJakartaSans, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
+                if (amILeader) {
+                    OutlinedButton(
+                        onClick = onDeleteClick,
+                        enabled = !isActionLoading,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.5.dp, MaterialTheme.colorScheme.error),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                    ) {
+                        if (isActionLoading) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.error)
+                        } else {
+                            Icon(Icons.Outlined.DeleteForever, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Удалить клан", fontFamily = PlusJakartaSans, fontWeight = FontWeight.SemiBold)
                         }
                     }
                 }
             }
         }
     }
-}
 
-@Composable
-private fun ClanHeader(clan: Clan, clanColor: Color, membersCount: Int) {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-    ) {
-        Column(modifier = Modifier.padding(20.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                // Цветной блок клана
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .size(56.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(clanColor.copy(alpha = 0.25f))
-                        .border(2.dp, clanColor, RoundedCornerShape(14.dp))
-                ) {
-                    Text(
-                        text = clan.tag,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = clanColor
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(14.dp))
-
-                Column {
-                    Text(
-                        text = clan.name,
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = "$membersCount/${clan.maxMembers} участников",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            if (!clan.description.isNullOrBlank()) {
-                Spacer(modifier = Modifier.height(10.dp))
+    // Accept/decline dialog
+    acceptTarget?.let { req ->
+        AlertDialog(
+            onDismissRequest = { acceptTarget = null },
+            containerColor = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(22.dp),
+            title = {
                 Text(
-                    text = clan.description,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    "Добавить игрока в клан?",
+                    fontFamily = PlusJakartaSans,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
                 )
-            }
-
-            Spacer(modifier = Modifier.height(14.dp))
-            HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
-            Spacer(modifier = Modifier.height(14.dp))
-
-            Row(horizontalArrangement = Arrangement.SpaceEvenly, modifier = Modifier.fillMaxWidth()) {
-                ClanStat("Площадь", formatArea(clan.totalAreaM2))
-                ClanStat("Участники", "$membersCount")
-            }
-        }
+            },
+            text = {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                    val color = remember(req.color) { parseColor(req.color) }
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier.size(48.dp).clip(CircleShape).background(color.copy(0.2f)),
+                    ) {
+                        Text(req.username.take(2).uppercase(), fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = DmMono, color = color)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text(req.username, fontFamily = PlusJakartaSans, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                    Text(formatArea(req.totalAreaM2), fontSize = 12.sp, fontFamily = DmMono, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { onAcceptRequest(req.userId); acceptTarget = null },
+                    colors = ButtonDefaults.textButtonColors(contentColor = primary),
+                ) {
+                    Text("Да", fontFamily = PlusJakartaSans, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { onDeclineRequest(req.userId); acceptTarget = null }) {
+                    Text("Нет", fontFamily = PlusJakartaSans)
+                }
+            },
+        )
     }
 }
 
 @Composable
-private fun ClanStat(label: String, value: String) {
+private fun JoinRequestRow(
+    request: ClanJoinRequestItem,
+    primary: Color,
+    onClick: () -> Unit,
+) {
+    val color = remember(request.color) { parseColor(request.color) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier.size(40.dp).clip(CircleShape).background(color.copy(0.2f)),
+        ) {
+            Text(request.username.take(2).uppercase(), fontSize = 13.sp, fontWeight = FontWeight.Bold, fontFamily = DmMono, color = color)
+        }
+        Spacer(Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(request.username, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, fontFamily = PlusJakartaSans, color = MaterialTheme.colorScheme.onSurface)
+            Text(formatArea(request.totalAreaM2), fontSize = 11.sp, fontFamily = DmMono, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+    }
+}
+
+@Composable
+private fun ClanStatCard(label: String, value: String, accent: Color) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Primary)
-        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, fontSize = 18.sp, fontWeight = FontWeight.Bold, fontFamily = DmMono, color = accent)
+        Text(label, fontSize = 11.sp, fontFamily = PlusJakartaSans, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -318,139 +631,137 @@ private fun MemberRow(
     member: ClanMember,
     isMe: Boolean,
     canKick: Boolean,
-    onKick: () -> Unit
+    primary: Color,
+    onKick: () -> Unit,
 ) {
-    val color = remember(member.color) {
-        try { Color(android.graphics.Color.parseColor(member.color).toLong() or 0xFF000000L) }
-        catch (_: Exception) { Primary }
-    }
+    val color = remember(member.color) { parseColor(member.color) }
     val roleLabel = when (member.role) {
         ClanRole.LEADER  -> "Лидер"
         ClanRole.OFFICER -> "Офицер"
         ClanRole.MEMBER  -> "Участник"
     }
+    val roleColor = when (member.role) {
+        ClanRole.LEADER  -> MaterialTheme.colorScheme.primary
+        ClanRole.OFFICER -> MaterialTheme.colorScheme.tertiary
+        ClanRole.MEMBER  -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val rowBg = if (isMe) primary.copy(alpha = 0.06f) else Color.Transparent
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .background(rowBg)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
+        // Avatar
         Box(
             contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .size(40.dp)
-                .clip(CircleShape)
-                .background(color.copy(alpha = 0.2f))
+            modifier = Modifier.size(40.dp).clip(CircleShape).background(color.copy(alpha = 0.2f)),
         ) {
-            Text(
-                text = member.username.take(2).uppercase(),
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold,
-                color = color
-            )
+            Text(member.username.take(2).uppercase(), fontSize = 13.sp, fontWeight = FontWeight.Bold, fontFamily = DmMono, color = color)
         }
-
         Spacer(modifier = Modifier.width(10.dp))
 
         Column(modifier = Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
                     text = member.username + if (isMe) " (я)" else "",
-                    style = MaterialTheme.typography.bodyMedium,
+                    fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold,
+                    fontFamily = PlusJakartaSans,
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
                 )
-                Spacer(modifier = Modifier.width(6.dp))
-                Surface(
-                    shape = RoundedCornerShape(4.dp),
-                    color = when (member.role) {
-                        ClanRole.LEADER  -> Primary.copy(alpha = 0.15f)
-                        ClanRole.OFFICER -> Tertiary.copy(alpha = 0.15f)
-                        ClanRole.MEMBER  -> MaterialTheme.colorScheme.surfaceVariant
-                    }
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(roleColor.copy(alpha = 0.12f))
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
                 ) {
-                    Text(
-                        text = roleLabel,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = when (member.role) {
-                            ClanRole.LEADER  -> Primary
-                            ClanRole.OFFICER -> Tertiary
-                            ClanRole.MEMBER  -> MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                    )
+                    Text(roleLabel, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = PlusJakartaSans, color = roleColor)
                 }
             }
             Text(
                 text = formatArea(member.totalAreaM2),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                fontSize = 11.sp,
+                fontFamily = DmMono,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
 
         if (canKick) {
-            IconButton(onClick = onKick, modifier = Modifier.size(36.dp)) {
-                Icon(
-                    Icons.Outlined.PersonRemove,
-                    contentDescription = "Исключить",
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(20.dp)
-                )
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(30.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.errorContainer)
+                    .clickable(onClick = onKick),
+            ) {
+                Icon(Icons.Outlined.PersonRemove, contentDescription = "Исключить", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(15.dp))
             }
         }
     }
 }
 
-// ====== Экран "Нет клана" ======
+// ── No clan ───────────────────────────────────────────────────────────────────
 
 @Composable
 private fun NoClanContent(
     topClans: List<ClanLeaderboardEntry>,
     isActionLoading: Boolean,
+    primary: Color,
+    onBg: Color,
     onCreateClan: () -> Unit,
-    onJoinClan: (String) -> Unit
+    onClanTapped: (ClanLeaderboardEntry) -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = 24.dp)
+        contentPadding = PaddingValues(bottom = 24.dp),
     ) {
         item {
-            // Кнопка создания
-            Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp)) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    color = Primary.copy(alpha = 0.08f),
-                    border = BorderStroke(1.dp, Primary.copy(alpha = 0.3f))
-                ) {
-                    Column(
-                        modifier = Modifier.padding(20.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+            // Hero card
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+                    .clip(RoundedCornerShape(22.dp))
+                    .background(Brush.linearGradient(listOf(primary.copy(0.16f), primary.copy(0.05f))))
+                    .border(1.dp, primary.copy(0.3f), RoundedCornerShape(22.dp))
+                    .padding(28.dp),
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier.size(68.dp).clip(CircleShape).background(primary.copy(alpha = 0.15f)),
                     ) {
-                        Icon(Icons.Outlined.Groups, contentDescription = null, tint = Primary, modifier = Modifier.size(40.dp))
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text("Вы не состоите в клане", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            "Создайте свой клан или вступите в существующий",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Button(
-                            onClick = onCreateClan,
-                            colors = ButtonDefaults.buttonColors(containerColor = Primary),
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Icon(Icons.Outlined.Add, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Создать клан")
-                        }
+                        Icon(Icons.Outlined.Groups, contentDescription = null, tint = primary, modifier = Modifier.size(36.dp))
                     }
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        "Вы не в клане",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        fontFamily = PlusJakartaSans,
+                        color = onBg,
+                        textAlign = TextAlign.Center,
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        "Создайте свой клан или вступите\nв существующий",
+                        fontSize = 13.sp,
+                        fontFamily = PlusJakartaSans,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                    )
+                    Spacer(modifier = Modifier.height(20.dp))
+                    PrimaryButton(
+                        text = "Создать свой клан",
+                        onClick = onCreateClan,
+                        icon = { Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                    )
                 }
             }
         }
@@ -458,11 +769,13 @@ private fun NoClanContent(
         if (topClans.isNotEmpty()) {
             item {
                 Text(
-                    text = "Топ кланов",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
-                    color = MaterialTheme.colorScheme.onBackground
+                    text = "ПОПУЛЯРНЫЕ КЛАНЫ",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = PlusJakartaSans,
+                    letterSpacing = 0.8.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
                 )
             }
 
@@ -470,11 +783,11 @@ private fun NoClanContent(
                 TopClanRow(
                     clan = clan,
                     isActionLoading = isActionLoading,
-                    onJoin = { onJoinClan(clan.clanId) }
+                    onJoin = { onClanTapped(clan) },
                 )
                 HorizontalDivider(
                     modifier = Modifier.padding(horizontal = 16.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(0.5f),
                 )
             }
         }
@@ -485,48 +798,41 @@ private fun NoClanContent(
 private fun TopClanRow(
     clan: ClanLeaderboardEntry,
     isActionLoading: Boolean,
-    onJoin: () -> Unit
+    onJoin: () -> Unit,
 ) {
-    val color = remember(clan.color) {
-        try { Color(android.graphics.Color.parseColor(clan.color).toLong() or 0xFF000000L) }
-        catch (_: Exception) { Primary }
-    }
+    val color = remember(clan.color) { parseColor(clan.color) }
 
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier
-                .size(44.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(color.copy(alpha = 0.2f))
+                .size(46.dp)
+                .clip(RoundedCornerShape(13.dp))
+                .background(color.copy(0.2f))
+                .border(1.dp, color.copy(0.5f), RoundedCornerShape(13.dp)),
         ) {
-            Text(
-                text = clan.tag.take(3),
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.ExtraBold,
-                color = color
-            )
+            Text(clan.tag.take(3), fontSize = 13.sp, fontWeight = FontWeight.ExtraBold, fontFamily = DmMono, color = color)
         }
-
-        Spacer(modifier = Modifier.width(10.dp))
+        Spacer(modifier = Modifier.width(12.dp))
 
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = clan.name,
-                style = MaterialTheme.typography.bodyMedium,
+                fontSize = 14.sp,
                 fontWeight = FontWeight.SemiBold,
+                fontFamily = PlusJakartaSans,
+                color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
             )
             Text(
                 text = "${clan.membersCount} участников • ${formatArea(clan.totalAreaM2)}",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                fontSize = 11.sp,
+                fontFamily = DmMono,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
 
@@ -534,31 +840,84 @@ private fun TopClanRow(
             onClick = onJoin,
             enabled = !isActionLoading,
             modifier = Modifier.height(34.dp),
-            contentPadding = PaddingValues(horizontal = 12.dp),
-            shape = RoundedCornerShape(8.dp)
+            contentPadding = PaddingValues(horizontal = 14.dp),
+            shape = RoundedCornerShape(8.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
         ) {
-            Text("Вступить", style = MaterialTheme.typography.labelSmall)
+            Text("Вступить", fontSize = 12.sp, fontFamily = PlusJakartaSans, fontWeight = FontWeight.SemiBold)
         }
     }
 }
 
-// ====== Форма создания клана ======
+// ── Create form ───────────────────────────────────────────────────────────────
 
 @Composable
 private fun CreateClanForm(
     form: CreateClanForm,
     isLoading: Boolean,
+    primary: Color,
+    onBg: Color,
     onNameChanged: (String) -> Unit,
     onTagChanged: (String) -> Unit,
     onColorChanged: (String) -> Unit,
     onDescriptionChanged: (String) -> Unit,
-    onCreate: () -> Unit
+    onCreate: () -> Unit,
 ) {
+    val previewColor = remember(form.color) { parseColor(form.color) }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
+        // Live preview card
+        item {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(previewColor.copy(0.08f))
+                    .border(1.5.dp, previewColor.copy(0.4f), RoundedCornerShape(16.dp))
+                    .shadow(0.dp, RoundedCornerShape(16.dp), ambientColor = previewColor.copy(0.3f), spotColor = previewColor.copy(0.3f))
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .size(46.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(previewColor.copy(0.2f))
+                        .border(1.5.dp, previewColor, RoundedCornerShape(12.dp)),
+                ) {
+                    Text(
+                        text = form.tag.ifBlank { "TAG" }.take(4),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        fontFamily = DmMono,
+                        color = previewColor,
+                    )
+                }
+                Column {
+                    Text(
+                        text = form.name.ifBlank { "Название клана" },
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = PlusJakartaSans,
+                        color = onBg,
+                    )
+                    Text(
+                        "1 участник",
+                        fontSize = 11.sp,
+                        fontFamily = PlusJakartaSans,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+
+        // Clan name
         item {
             AppTextField(
                 value = form.name,
@@ -567,10 +926,11 @@ private fun CreateClanForm(
                 leadingIcon = Icons.Outlined.Group,
                 error = form.nameError,
                 isValid = form.name.length >= 3 && form.nameError == null,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next)
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
             )
         }
 
+        // Tag
         item {
             AppTextField(
                 value = form.tag,
@@ -579,36 +939,49 @@ private fun CreateClanForm(
                 leadingIcon = Icons.Outlined.Tag,
                 error = form.tagError,
                 isValid = form.tag.length >= 2 && form.tagError == null,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next)
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
             )
-            Text(
-                text = "Отображается рядом с именем: [${form.tag.ifBlank { "TAG" }}]",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 4.dp, top = 4.dp)
-            )
+            AnimatedVisibility(visible = form.tag.isNotBlank()) {
+                Text(
+                    text = "Отображается рядом с именем: [${form.tag}]",
+                    fontSize = 11.sp,
+                    fontFamily = PlusJakartaSans,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 4.dp, top = 4.dp),
+                )
+            }
         }
 
+        // Color picker
         item {
             Text(
-                text = "Цвет клана",
-                style = MaterialTheme.typography.titleSmall,
+                "Цвет клана",
+                fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onBackground
+                fontFamily = PlusJakartaSans,
+                color = MaterialTheme.colorScheme.onBackground,
             )
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(10.dp))
             ClanColorPicker(selectedHex = form.color, onSelected = onColorChanged)
         }
 
+        // Description
         item {
             OutlinedTextField(
                 value = form.description,
                 onValueChange = onDescriptionChanged,
-                label = { Text("Описание (необязательно)") },
+                label = { Text("Описание (необязательно)", fontFamily = PlusJakartaSans) },
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(14.dp),
                 maxLines = 3,
-                supportingText = { Text("${form.description.length}/200") }
+                textStyle = LocalTextStyle.current.copy(fontFamily = PlusJakartaSans),
+                supportingText = {
+                    Text(
+                        "${form.description.length}/200",
+                        fontFamily = DmMono,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                },
             )
         }
 
@@ -617,7 +990,7 @@ private fun CreateClanForm(
                 text = "Создать клан",
                 onClick = onCreate,
                 isLoading = isLoading,
-                enabled = form.isValid && !isLoading
+                enabled = form.isValid && !isLoading,
             )
         }
     }
@@ -627,46 +1000,45 @@ private fun CreateClanForm(
 private fun ClanColorPicker(selectedHex: String, onSelected: (String) -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceEvenly
+        horizontalArrangement = Arrangement.SpaceEvenly,
     ) {
         CLAN_COLORS.forEach { hex ->
-            val color = remember(hex) {
-                try { Color(android.graphics.Color.parseColor(hex).toLong() or 0xFF000000L) }
-                catch (_: Exception) { Primary }
-            }
+            val color = remember(hex) { parseColor(hex) }
             val isSelected = hex.equals(selectedHex, ignoreCase = true)
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
-                    .size(36.dp)
+                    .size(34.dp)
                     .clip(CircleShape)
                     .background(color)
                     .border(
                         width = if (isSelected) 3.dp else 0.dp,
                         color = MaterialTheme.colorScheme.onBackground,
-                        shape = CircleShape
+                        shape = CircleShape,
                     )
-                    .clickable { onSelected(hex) }
+                    .clickable { onSelected(hex) },
             ) {
                 if (isSelected) {
-                    Icon(Icons.Outlined.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Outlined.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
                 }
             }
         }
     }
 }
 
-// ====== Общие компоненты ======
+// ── Error ─────────────────────────────────────────────────────────────────────
 
 @Composable
-private fun ErrorState(message: String, onRetry: () -> Unit) {
+private fun ClanErrorState(message: String, onRetry: () -> Unit) {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
             Icon(Icons.Outlined.CloudOff, contentDescription = null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(modifier = Modifier.height(12.dp))
-            Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(message, fontFamily = PlusJakartaSans, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
             Spacer(modifier = Modifier.height(16.dp))
-            OutlinedButton(onClick = onRetry) { Text("Повторить") }
+            OutlinedButton(onClick = onRetry, shape = RoundedCornerShape(12.dp)) {
+                Text("Повторить", fontFamily = PlusJakartaSans)
+            }
         }
     }
 }

@@ -45,3 +45,10 @@ admin/dist/
 *.sqlite
 *.log
 app/google-services.json
+
+# Gradle binaries
+gradle-*.zip
+gradle-*/
+
+# IDE
+.cursor/

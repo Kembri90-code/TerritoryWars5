@@ -1,0 +1,28 @@
+appId: com.territorywars
+---
+# Territory capture smoke:
+# login (if needed) -> open capture -> verify capture panel -> cancel capture.
+
+- launchApp
+
+- runFlow:
+    when:
+      visible: "Войдите в аккаунт"
+    file: _login.yaml
+
+- extendedWaitUntil:
+    visible: "Начать захват"
+    timeout: 30000
+
+- assertVisible: "Карта"
+- tapOn: "Начать захват"
+
+# Capture panel should appear.
+- assertVisible: "Дистанция"
+- assertVisible: "Время"
+- assertVisible: "До старта"
+- assertVisible: "Отмена"
+
+# Non-destructive end of flow.
+- tapOn: "Отмена"
+- assertVisible: "Начать захват"

@@ -28,12 +28,13 @@ model User {
   updatedAt        DateTime @updatedAt @map("updated_at")
   fcmToken          String?  @map("fcm_token")
 
-  city           City            @relation(fields: [cityId], references: [id])
-  clan           Clan?           @relation("ClanMembers", fields: [clanId], references: [id])
-  ledClan        Clan?           @relation("ClanLeader")
-  territories    Territory[]
-  clanMembership ClanMember?
-  refreshTokens  RefreshToken[]
+  city              City              @relation(fields: [cityId], references: [id])
+  clan              Clan?             @relation("ClanMembers", fields: [clanId], references: [id])
+  ledClan           Clan?             @relation("ClanLeader")
+  territories       Territory[]
+  clanMembership    ClanMember?
+  refreshTokens     RefreshToken[]
+  clanJoinRequests  ClanJoinRequest[]
 
   @@map("users")
 }
@@ -79,12 +80,27 @@ model Clan {
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 
-  leader      User         @relation("ClanLeader", fields: [leaderId], references: [id])
-  members     User[]       @relation("ClanMembers")
-  clanMembers ClanMember[]
-  territories Territory[]
+  leader          User              @relation("ClanLeader", fields: [leaderId], references: [id])
+  members         User[]            @relation("ClanMembers")
+  clanMembers     ClanMember[]
+  territories     Territory[]
+  joinRequests    ClanJoinRequest[]
 
   @@map("clans")
+}
+
+model ClanJoinRequest {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  clanId    String   @map("clan_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clan Clan @relation(fields: [clanId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, clanId])
+  @@index([clanId])
+  @@map("clan_join_requests")
 }
 
 model ClanMember {

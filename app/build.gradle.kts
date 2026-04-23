@@ -28,11 +28,16 @@ android {
         // URL бэкенда
         buildConfigField("String", "BASE_URL", "\"http://93.183.74.141/api/\"")
         buildConfigField("String", "WS_URL", "\"ws://93.183.74.141\"")
+
+        ndk {
+            abiFilters += "arm64-v8a"
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -115,6 +120,9 @@ dependencies {
 
     // Accompanist Permissions
     implementation(libs.accompanist.permissions)
+
+    // Google Fonts (Plus Jakarta Sans, DM Mono)
+    implementation("androidx.compose.ui:ui-text-google-fonts")
 
     // Timber
     implementation(libs.timber)

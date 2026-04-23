@@ -5,7 +5,7 @@ import crypto from 'crypto';
 import { z } from 'zod';
 import { prisma } from '../prisma';
 import { config } from '../config';
-import { requireAuth, JwtPayload } from '../middleware/auth';
+import { requireAuth } from '../middleware/auth';
 
 const router = Router();
 
@@ -38,16 +38,27 @@ async function hashToken(token: string): Promise<string> {
 async function buildUserResponse(userId: string) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    include: {
-      city: true,
-      clanMembership: { include: { clan: true } },
-    },
+    include: { city: true },
   });
   if (!user) return null;
-  return formatUser(user);
+  const clan = await getClanMetaSafe(user.clanId);
+  return formatUser(user, clan);
 }
 
-function formatUser(user: any) {
+async function getClanMetaSafe(clanId: string | null) {
+  if (!clanId) return null;
+  try {
+    return await prisma.clan.findUnique({
+      where: { id: clanId },
+      select: { name: true, tag: true },
+    });
+  } catch {
+    // Keep auth flow working even if clan tables/migrations are unavailable.
+    return null;
+  }
+}
+
+function formatUser(user: any, clan: { name: string; tag: string } | null) {
   return {
     id: user.id,
     email: user.email,
@@ -57,8 +68,8 @@ function formatUser(user: any) {
     city_id: user.cityId,
     city_name: user.city?.name ?? null,
     clan_id: user.clanId ?? null,
-    clan_name: user.clanMembership?.clan?.name ?? null,
-    clan_tag: user.clanMembership?.clan?.tag ?? null,
+    clan_name: clan?.name ?? null,
+    clan_tag: clan?.tag ?? null,
     total_area_m2: user.totalAreaM2,
     territories_count: user.territoriesCount,
     captures_count: user.capturesCount,
@@ -91,7 +102,7 @@ router.post('/register', async (req: Request, res: Response) => {
     const passwordHash = await bcrypt.hash(password, 12);
     const user = await prisma.user.create({
       data: { email, username, passwordHash, cityId: city_id },
-      include: { city: true, clanMembership: { include: { clan: true } } },
+      include: { city: true },
     });
 
     const accessToken = generateAccessToken(user.id, user.email);
@@ -103,10 +114,16 @@ router.post('/register', async (req: Request, res: Response) => {
       data: { userId: user.id, tokenHash, expiresAt },
     });
 
+    const userResponse = await buildUserResponse(user.id);
+    if (!userResponse) {
+      res.status(500).json({ error: 'Internal server error' });
+      return;
+    }
+
     res.status(201).json({
       access_token: accessToken,
       refresh_token: refreshToken,
-      user: formatUser(user),
+      user: userResponse,
     });
   } catch (err: any) {
     console.error('[Auth] Register error:', err);
@@ -126,7 +143,7 @@ router.post('/login', async (req: Request, res: Response) => {
   try {
     const user = await prisma.user.findUnique({
       where: { email },
-      include: { city: true, clanMembership: { include: { clan: true } } },
+      include: { city: true },
     });
 
     if (!user) { res.status(401).json({ error: 'Invalid credentials' }); return; }
@@ -143,10 +160,16 @@ router.post('/login', async (req: Request, res: Response) => {
       data: { userId: user.id, tokenHash, expiresAt },
     });
 
+    const userResponse = await buildUserResponse(user.id);
+    if (!userResponse) {
+      res.status(500).json({ error: 'Internal server error' });
+      return;
+    }
+
     res.json({
       access_token: accessToken,
       refresh_token: refreshToken,
-      user: formatUser(user),
+      user: userResponse,
     });
   } catch (err) {
     console.error('[Auth] Login error:', err);

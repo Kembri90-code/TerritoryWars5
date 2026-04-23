@@ -5,6 +5,15 @@ import com.google.gson.annotations.SerializedName
 import retrofit2.Response
 import retrofit2.http.*
 
+data class ClanJoinRequestDto(
+    @SerializedName("user_id") val userId: String,
+    @SerializedName("username") val username: String,
+    @SerializedName("avatar_url") val avatarUrl: String?,
+    @SerializedName("color") val color: String,
+    @SerializedName("total_area_m2") val totalAreaM2: Double,
+    @SerializedName("created_at") val createdAt: String
+)
+
 data class CreateClanRequest(
     @SerializedName("name") val name: String,
     @SerializedName("tag") val tag: String,
@@ -54,6 +63,27 @@ interface ClanApi {
 
     @DELETE("clans/{id}/members/{userId}")
     suspend fun kickMember(
+        @Path("id") clanId: String,
+        @Path("userId") userId: String
+    ): Response<Unit>
+
+    @DELETE("clans/{id}")
+    suspend fun deleteClan(@Path("id") id: String): Response<Unit>
+
+    @POST("clans/{id}/request")
+    suspend fun requestJoinClan(@Path("id") id: String): Response<Unit>
+
+    @GET("clans/{id}/requests")
+    suspend fun getClanRequests(@Path("id") id: String): Response<List<ClanJoinRequestDto>>
+
+    @POST("clans/{id}/requests/{userId}/accept")
+    suspend fun acceptJoinRequest(
+        @Path("id") clanId: String,
+        @Path("userId") userId: String
+    ): Response<Unit>
+
+    @DELETE("clans/{id}/requests/{userId}")
+    suspend fun declineJoinRequest(
         @Path("id") clanId: String,
         @Path("userId") userId: String
     ): Response<Unit>

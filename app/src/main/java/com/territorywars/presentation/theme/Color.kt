@@ -2,73 +2,66 @@ package com.territorywars.presentation.theme
 
 import androidx.compose.ui.graphics.Color
 
-// --- Primary palette (green — territory capture accent) ---
-val Primary = Color(0xFF00C853)
-val PrimaryDark = Color(0xFF00963D)
-val PrimaryContainer = Color(0xFF003D18)
-val OnPrimaryContainer = Color(0xFFB9F6CA)
+// ── Dark theme tokens ─────────────────────────────────────────────────────────
+val DarkBg             = Color(0xFF0C0C15)
+val DarkBgAlt          = Color(0xFF111120)
+val DarkSurface        = Color(0xFF14141F)
+val DarkSurfCont       = Color(0xFF1C1C2A)
+val DarkSurfContHigh   = Color(0xFF232336)
+val DarkSurfContLow    = Color(0xFF171724)
 
-val Secondary = Color(0xFF1565C0)
-val SecondaryDark = Color(0xFF003C8F)
-val SecondaryContainer = Color(0xFF000E3A)
-val OnSecondaryContainer = Color(0xFFBBDEFB)
+val DarkPrimary        = Color(0xFF7C6EF8)
+val DarkPrimaryDim     = Color(0xFF5E50D4)
+val DarkOnPrimary      = Color(0xFFFFFFFF)
+val DarkSecondary      = Color(0xFF60A5FA)
+val DarkTertiary       = Color(0xFFA78BFA)
+val DarkError          = Color(0xFFF87171)
+val DarkErrorCont      = Color(0x26F87171)  // rgba(248,113,113,0.15)
+val DarkWarning        = Color(0xFFFBBF24)
 
-val Tertiary = Color(0xFFFF6D00)
-val TertiaryContainer = Color(0xFF3D1A00)
-val OnTertiaryContainer = Color(0xFFFFD0B0)
+val DarkOnBg           = Color(0xFFECEBFF)
+val DarkOnSurf         = Color(0xFFE2E1F5)
+val DarkOnSurfVar      = Color(0xFF8885B0)
+val DarkOutline        = Color(0xFF2E2E46)
+val DarkOutlineVar     = Color(0xFF1F1F30)
 
-// --- Dark scheme surfaces ---
-val BackgroundDark = Color(0xFF0D0D0D)
-val SurfaceDark = Color(0xFF1A1A1A)
-val SurfaceVariantDark = Color(0xFF252525)
-val OutlineDark = Color(0xFF3D3D3D)
-val OutlineVariantDark = Color(0xFF2A2A2A)
-val OverlayDark = Color(0xCC0D0D0D)
+// ── Light theme tokens ────────────────────────────────────────────────────────
+val LightBg            = Color(0xFFF7F6FF)
+val LightBgAlt         = Color(0xFFFFFFFF)
+val LightSurface       = Color(0xFFFFFFFF)
+val LightSurfCont      = Color(0xFFEFEEFD)
+val LightSurfContHigh  = Color(0xFFE6E4FC)
+val LightSurfContLow   = Color(0xFFF5F4FF)
 
-// --- Light scheme surfaces ---
-val BackgroundLight = Color(0xFFF5F5F5)
-val SurfaceLight = Color(0xFFFFFFFF)
-val SurfaceVariantLight = Color(0xFFEEEEEE)
-val OutlineLight = Color(0xFF9E9E9E)
-val OutlineVariantLight = Color(0xFFDDDDDD)
+val LightPrimary       = Color(0xFF5644E8)
+val LightPrimaryDim    = Color(0xFF4433C8)
+val LightOnPrimary     = Color(0xFFFFFFFF)
+val LightSecondary     = Color(0xFF2563EB)
+val LightTertiary      = Color(0xFF7C3AED)
+val LightError         = Color(0xFFDC2626)
+val LightErrorCont     = Color(0x1ADC2626)  // rgba(220,38,38,0.10)
+val LightWarning       = Color(0xFFD97706)
 
-// --- On-colors (dark theme) ---
-val OnBackgroundDark = Color(0xFFEEEEEE)
-val OnSurfaceDark = Color(0xFFDDDDDD)
-val OnSurfaceVariantDark = Color(0xFF9E9E9E)
+val LightOnBg          = Color(0xFF1A1835)
+val LightOnSurf        = Color(0xFF1A1835)
+val LightOnSurfVar     = Color(0xFF6B67A0)
+val LightOutline       = Color(0xFFD8D6F0)
+val LightOutlineVar    = Color(0xFFEAE9F8)
 
-// --- On-colors (light theme) ---
-val OnBackgroundLight = Color(0xFF111111)
-val OnSurfaceLight = Color(0xFF212121)
-val OnSurfaceVariantLight = Color(0xFF616161)
-
-// --- Status colors ---
-val Error = Color(0xFFD32F2F)
-val OnError = Color(0xFFFFFFFF)
-val ErrorContainer = Color(0xFF4D0000)
-val OnErrorContainer = Color(0xFFFFB4AB)
-
-// --- Map overlay ---
-val MyTerritoryFill = Color(0x6600C853)   // 40% opacity
-val MyTerritoryStroke = Color(0xFF00C853)
-val OtherTerritoryFillAlpha = 0.35f
-val OtherTerritoryStrokeAlpha = 0.85f
-val MapOverlayBackground = Color(0xCC1A1A1A)
-val MapButtonBackground = Color(0xFF1A1A1A)
-val MapButtonBorder = Color(0x3300C853)
-
-// --- 12 preset territory colors ---
-val TerritoryColors = listOf(
-    Color(0xFFE53935),
-    Color(0xFFFF6D00),
-    Color(0xFFFFD600),
-    Color(0xFF76FF03),
-    Color(0xFF00C853),
-    Color(0xFF1DE9B6),
-    Color(0xFF40C4FF),
-    Color(0xFF2979FF),
-    Color(0xFFD500F9),
-    Color(0xFFFF4081),
-    Color(0xFFFF1744),
-    Color(0xFF6D4C41),
+// ── Preset colors (territory / clan) ─────────────────────────────────────────
+val PresetColors = listOf(
+    "#7C6EF8", "#60A5FA", "#F87171", "#FBBF24",
+    "#A78BFA", "#34D399", "#F472B6", "#FB923C",
+    "#38BDF8", "#4ADE80", "#E879F9", "#FDE68A",
 )
+
+val PresetColorValues = listOf(
+    Color(0xFF7C6EF8), Color(0xFF60A5FA), Color(0xFFF87171), Color(0xFFFBBF24),
+    Color(0xFFA78BFA), Color(0xFF34D399), Color(0xFFF472B6), Color(0xFFFB923C),
+    Color(0xFF38BDF8), Color(0xFF4ADE80), Color(0xFFE879F9), Color(0xFFFDE68A),
+)
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+fun parseColor(hex: String): Color = try {
+    Color(android.graphics.Color.parseColor(hex))
+} catch (_: Exception) { DarkPrimary }

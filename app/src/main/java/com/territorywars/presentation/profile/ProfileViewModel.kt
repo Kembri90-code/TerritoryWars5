@@ -6,6 +6,8 @@ import com.territorywars.data.local.TokenDataStore
 import com.territorywars.data.remote.api.UserApi
 import com.territorywars.data.remote.dto.UpdateProfileRequest
 import com.territorywars.domain.model.User
+import com.territorywars.presentation.map.PlayerMarker
+import com.territorywars.presentation.map.playerMarkerById
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -19,7 +21,8 @@ data class ProfileState(
     val isLoading: Boolean = false,
     val isSaving: Boolean = false,
     val error: String? = null,
-    val isLoggedOut: Boolean = false
+    val isLoggedOut: Boolean = false,
+    val selectedMarker: PlayerMarker = PlayerMarker.DOT
 )
 
 @HiltViewModel
@@ -33,6 +36,11 @@ class ProfileViewModel @Inject constructor(
 
     init {
         loadProfile()
+        viewModelScope.launch {
+            tokenDataStore.playerMarker.collect { id ->
+                _state.update { it.copy(selectedMarker = playerMarkerById(id)) }
+            }
+        }
     }
 
     fun loadProfile() {
@@ -66,6 +74,13 @@ class ProfileViewModel @Inject constructor(
             } catch (_: Exception) {
                 _state.update { it.copy(isSaving = false) }
             }
+        }
+    }
+
+    fun changeMarker(marker: PlayerMarker) {
+        viewModelScope.launch {
+            tokenDataStore.savePlayerMarker(marker.id)
+            _state.update { it.copy(selectedMarker = marker) }
         }
     }
 

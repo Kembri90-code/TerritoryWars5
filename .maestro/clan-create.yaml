@@ -1,0 +1,43 @@
+appId: com.territorywars
+---
+# Clan create flow (destructive):
+# creates a new clan for the logged-in user.
+#
+# Requires env vars:
+# - CLAN_NAME
+# - CLAN_TAG
+
+- launchApp
+
+- runFlow:
+    when:
+      visible: "Войдите в аккаунт"
+    file: _login.yaml
+
+- tapOn: "Клан"
+- extendedWaitUntil:
+    visible: "Клан"
+    timeout: 30000
+
+- assertVisible: "Создать свой клан"
+- tapOn: "Создать свой клан"
+
+- extendedWaitUntil:
+    visible: "Создать клан"
+    timeout: 30000
+
+- tapOn: "Название клана"
+- eraseText
+- inputText: "${CLAN_NAME}"
+
+- tapOn: "Тег (2–4 символа)"
+- eraseText
+- inputText: "${CLAN_TAG}"
+
+- hideKeyboard
+- tapOn: "Создать клан"
+
+# Success screen should show clan member actions.
+- extendedWaitUntil:
+    visible: "Удалить клан"
+    timeout: 30000

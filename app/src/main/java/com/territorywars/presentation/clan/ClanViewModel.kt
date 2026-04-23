@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.territorywars.data.remote.api.ClanApi
 import com.territorywars.data.remote.api.ClanDto
+import com.territorywars.data.remote.api.ClanJoinRequestDto
 import com.territorywars.data.remote.api.ClanMemberDto
 import com.territorywars.data.remote.api.CreateClanRequest
 import com.territorywars.data.remote.api.LeaderboardApi
@@ -20,6 +21,15 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+
+data class ClanJoinRequestItem(
+    val userId: String,
+    val username: String,
+    val avatarUrl: String?,
+    val color: String,
+    val totalAreaM2: Double,
+    val createdAt: String
+)
 
 // ---- Форма создания клана ----
 data class CreateClanForm(
@@ -40,6 +50,8 @@ data class ClanState(
     val myClan: Clan? = null,
     val myUserId: String? = null,
     val members: List<ClanMember> = emptyList(),
+    // Заявки на вступление (видны только лидеру)
+    val joinRequests: List<ClanJoinRequestItem> = emptyList(),
     // Топ кланов (когда пользователь без клана)
     val topClans: List<ClanLeaderboardEntry> = emptyList(),
     // UI-состояния
@@ -84,10 +96,18 @@ class ClanViewModel @Inject constructor(
                     val clanResponse = clanApi.getClanById(user.clanId)
                     val membersResponse = clanApi.getClanMembers(user.clanId)
                     if (clanResponse.isSuccessful && membersResponse.isSuccessful) {
+                        val clan = clanResponse.body()!!.toDomain()
+                        val members = membersResponse.body()!!.map { m -> m.toDomain() }
+                        // Загружаем заявки только если пользователь — лидер
+                        val requests = if (clan.leaderId == user.id) {
+                            val r = clanApi.getClanRequests(user.clanId)
+                            if (r.isSuccessful) r.body()!!.map { it.toItem() } else emptyList()
+                        } else emptyList()
                         _state.update {
                             it.copy(
-                                myClan = clanResponse.body()!!.toDomain(),
-                                members = membersResponse.body()!!.map { m -> m.toDomain() },
+                                myClan = clan,
+                                members = members,
+                                joinRequests = requests,
                                 isLoading = false
                             )
                         }
@@ -172,7 +192,7 @@ class ClanViewModel @Inject constructor(
                             isCreating = false,
                             myClan = response.body()!!.toDomain(),
                             members = emptyList(),
-                            successMessage = "Клан «${form.name}» создан!"
+                            successMessage = "✓ Клан «${form.name}» создан!"
                         )
                     }
                     // Загружаем участников
@@ -231,12 +251,43 @@ class ClanViewModel @Inject constructor(
                             isActionLoading = false,
                             myClan = null,
                             members = emptyList(),
-                            successMessage = "Вы покинули клан"
+                            successMessage = "✓ Вы покинули клан"
                         )
                     }
                     loadData()
                 } else {
                     _state.update { it.copy(isActionLoading = false, actionError = "Не удалось покинуть клан") }
+                }
+            } catch (_: Exception) {
+                _state.update { it.copy(isActionLoading = false, actionError = "Нет подключения к серверу") }
+            }
+        }
+    }
+
+    // ---- Удаление клана (только для лидера) ----
+
+    fun deleteClan() {
+        val clanId = _state.value.myClan?.id ?: return
+        viewModelScope.launch {
+            _state.update { it.copy(isActionLoading = true, actionError = null) }
+            try {
+                val response = clanApi.deleteClan(clanId)
+                if (response.isSuccessful) {
+                    _state.update {
+                        it.copy(
+                            isActionLoading = false,
+                            myClan = null,
+                            members = emptyList(),
+                            successMessage = "✓ Клан удалён"
+                        )
+                    }
+                    loadData()
+                } else {
+                    val msg = when (response.code()) {
+                        403 -> "Только лидер может удалить клан"
+                        else -> "Ошибка удаления клана"
+                    }
+                    _state.update { it.copy(isActionLoading = false, actionError = msg) }
                 }
             } catch (_: Exception) {
                 _state.update { it.copy(isActionLoading = false, actionError = "Нет подключения к серверу") }
@@ -260,6 +311,77 @@ class ClanViewModel @Inject constructor(
                 }
             } catch (_: Exception) {
                 _state.update { it.copy(isActionLoading = false, actionError = "Не удалось исключить участника") }
+            }
+        }
+    }
+
+    // ---- Заявка на вступление в клан ----
+
+    fun requestJoinClan(clanId: String) {
+        viewModelScope.launch {
+            _state.update { it.copy(isActionLoading = true, actionError = null) }
+            try {
+                val response = clanApi.requestJoinClan(clanId)
+                if (response.isSuccessful) {
+                    _state.update {
+                        it.copy(isActionLoading = false, successMessage = "✓ Заявка отправлена главе клана")
+                    }
+                } else {
+                    val msg = when (response.code()) {
+                        409 -> "Заявка уже отправлена или вы уже в клане"
+                        403 -> "Клан заполнен"
+                        else -> "Не удалось отправить заявку"
+                    }
+                    _state.update { it.copy(isActionLoading = false, actionError = msg) }
+                }
+            } catch (_: Exception) {
+                _state.update { it.copy(isActionLoading = false, actionError = "Нет подключения к серверу") }
+            }
+        }
+    }
+
+    // ---- Принять заявку (лидер) ----
+
+    fun acceptJoinRequest(userId: String) {
+        val clanId = _state.value.myClan?.id ?: return
+        viewModelScope.launch {
+            _state.update { it.copy(isActionLoading = true) }
+            try {
+                val response = clanApi.acceptJoinRequest(clanId, userId)
+                if (response.isSuccessful) {
+                    _state.update {
+                        it.copy(
+                            isActionLoading = false,
+                            joinRequests = it.joinRequests.filter { r -> r.userId != userId },
+                            successMessage = "✓ Участник добавлен в клан"
+                        )
+                    }
+                    loadData()
+                } else {
+                    _state.update { it.copy(isActionLoading = false, actionError = "Не удалось принять заявку") }
+                }
+            } catch (_: Exception) {
+                _state.update { it.copy(isActionLoading = false, actionError = "Нет подключения к серверу") }
+            }
+        }
+    }
+
+    // ---- Отклонить заявку (лидер) ----
+
+    fun declineJoinRequest(userId: String) {
+        val clanId = _state.value.myClan?.id ?: return
+        viewModelScope.launch {
+            _state.update { it.copy(isActionLoading = true) }
+            try {
+                clanApi.declineJoinRequest(clanId, userId)
+                _state.update {
+                    it.copy(
+                        isActionLoading = false,
+                        joinRequests = it.joinRequests.filter { r -> r.userId != userId }
+                    )
+                }
+            } catch (_: Exception) {
+                _state.update { it.copy(isActionLoading = false, actionError = "Нет подключения к серверу") }
             }
         }
     }
@@ -293,6 +415,11 @@ private fun ClanMemberDto.toDomain() = ClanMember(
     },
     totalAreaM2 = totalAreaM2,
     joinedAt = joinedAt
+)
+
+private fun ClanJoinRequestDto.toItem() = ClanJoinRequestItem(
+    userId = userId, username = username, avatarUrl = avatarUrl,
+    color = color, totalAreaM2 = totalAreaM2, createdAt = createdAt
 )
 
 private fun ClanLeaderboardDto.toDomain() = ClanLeaderboardEntry(

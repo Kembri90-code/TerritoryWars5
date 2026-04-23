@@ -1,0 +1,30 @@
+appId: com.territorywars
+---
+# Smoke test: unauthenticated happy navigation
+# Covers: app launch -> login visible -> register screen -> back to login.
+
+- launchApp
+
+# Wait until either login CTA or register title is visible.
+- extendedWaitUntil:
+    visible: "Войти"
+    timeout: 30000
+
+# Login screen sanity checks.
+- assertVisible: "Territory Wars"
+- assertVisible: "Войдите в аккаунт"
+- assertVisible: "Войти"
+- assertVisible: "Создать аккаунт"
+
+# Navigate to register.
+- tapOn: "Создать аккаунт"
+- assertVisible: "Регистрация"
+- assertVisible: "Никнейм"
+- assertVisible: "Email"
+- assertVisible: "Пароль"
+- assertVisible: "Подтвердить пароль"
+- assertVisible: "Город"
+
+# Return to login and verify.
+- tapOn: "Назад"
+- assertVisible: "Войдите в аккаунт"

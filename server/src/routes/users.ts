@@ -9,7 +9,21 @@ import { config } from '../config';
 
 const router = Router();
 
-function formatUser(user: any) {
+async function getClanMetaSafe(clanId: string | null) {
+  if (!clanId) return null;
+  try {
+    return await prisma.clan.findUnique({
+      where: { id: clanId },
+      select: { name: true, tag: true },
+    });
+  } catch {
+    // Keep profile endpoints available even if clan schema is unavailable.
+    return null;
+  }
+}
+
+async function formatUser(user: any) {
+  const clan = await getClanMetaSafe(user.clanId);
   return {
     id: user.id,
     email: user.email,
@@ -19,8 +33,8 @@ function formatUser(user: any) {
     city_id: user.cityId,
     city_name: user.city?.name ?? null,
     clan_id: user.clanId ?? null,
-    clan_name: user.clanMembership?.clan?.name ?? null,
-    clan_tag: user.clanMembership?.clan?.tag ?? null,
+    clan_name: clan?.name ?? null,
+    clan_tag: clan?.tag ?? null,
     total_area_m2: user.totalAreaM2,
     territories_count: user.territoriesCount,
     captures_count: user.capturesCount,
@@ -32,7 +46,6 @@ function formatUser(user: any) {
 
 const includeUserRelations = {
   city: true,
-  clanMembership: { include: { clan: true } },
 };
 
 const UpdateProfileSchema = z.object({
@@ -49,7 +62,7 @@ router.get('/me', requireAuth, async (req: Request, res: Response) => {
       include: includeUserRelations,
     });
     if (!user) { res.status(404).json({ error: 'User not found' }); return; }
-    res.json(formatUser(user));
+    res.json(await formatUser(user));
   } catch (err) {
     console.error('[Users] getMe error:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -86,7 +99,7 @@ router.put('/me', requireAuth, async (req: Request, res: Response) => {
       },
       include: includeUserRelations,
     });
-    res.json(formatUser(updated));
+    res.json(await formatUser(updated));
   } catch (err) {
     console.error('[Users] updateProfile error:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -113,7 +126,7 @@ router.post('/me/avatar', requireAuth, (req: Request, res: Response) => {
         data: { avatarUrl },
         include: includeUserRelations,
       });
-      res.json(formatUser(updated));
+      res.json(await formatUser(updated));
     } catch (dbErr) {
       console.error('[Users] uploadAvatar error:', dbErr);
       res.status(500).json({ error: 'Internal server error' });
@@ -129,7 +142,7 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
       include: includeUserRelations,
     });
     if (!user) { res.status(404).json({ error: 'User not found' }); return; }
-    res.json(formatUser(user));
+    res.json(await formatUser(user));
   } catch (err) {
     console.error('[Users] getUserById error:', err);
     res.status(500).json({ error: 'Internal server error' });

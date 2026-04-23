@@ -120,6 +120,23 @@ export class NotificationService {
   }
 
   /**
+   * Уведомить лидера клана о новой заявке на вступление
+   */
+  static async notifyClanJoinRequest(
+    leaderId: string,
+    applicantName: string,
+    clanId: string,
+    clanName: string
+  ) {
+    await this.sendToUser(leaderId, {
+      title: '📋 Новая заявка в клан',
+      body: `${applicantName} хочет вступить в клан "${clanName}"`,
+      type: 'clan_invite',
+      data: { clanId, applicantName },
+    });
+  }
+
+  /**
    * Отправить приглашение в клан
    */
   static async notifyClanInvite(userId: string, clanName: string, clanId: string) {
