@@ -171,284 +171,232 @@ router.post('/capture', requireAuth, async (req: Request, res: Response) => {
     return;
   }
 
-  // Build WKT polygon
+  // Build WKT — may be self-intersecting; ST_MakeValid will split it into multiple polygons
   const wkt = `POLYGON((${points.map((p) => `${p.lng} ${p.lat}`).join(', ')}))`;
 
   try {
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) { res.status(404).json({ success: false, error: 'User not found', territory: null, merged: false }); return; }
 
-    // Validate polygon and compute metrics via PostGIS
-    const [validity] = await prisma.$queryRaw<any[]>`
+    // ST_MakeValid + ST_Dump: self-intersecting paths produce multiple valid polygons (e.g. areas A and B from the diagram)
+    const polygonPieces = await prisma.$queryRaw<any[]>`
       SELECT
-        ST_IsValid(ST_GeomFromText(${wkt}, 4326)) AS valid,
-        ST_Area(ST_GeomFromText(${wkt}, 4326)::geography) AS area_m2,
-        ST_Perimeter(ST_GeomFromText(${wkt}, 4326)::geography) AS perimeter_m
+        ST_AsText((dp).geom)               AS piece_wkt,
+        ST_Area((dp).geom::geography)      AS area_m2,
+        ST_Perimeter((dp).geom::geography) AS perimeter_m
+      FROM (
+        SELECT ST_Dump(ST_MakeValid(ST_GeomFromText(${wkt}, 4326))) AS dp
+      ) AS dumped
+      WHERE ST_GeometryType((dp).geom) = 'ST_Polygon'
+        AND ST_Area((dp).geom::geography) >= 100
+        AND ST_Area((dp).geom::geography) <= 5000000
+      ORDER BY area_m2 DESC
     `;
 
-    if (!validity.valid) {
-      res.status(400).json({ success: false, error: 'Invalid polygon geometry', territory: null, merged: false });
+    if (polygonPieces.length === 0) {
+      res.status(400).json({ success: false, error: 'Territory too small or invalid (min 100 m²)', territory: null, merged: false });
       return;
     }
-
-    const areaM2: number = parseFloat(validity.area_m2);
-    const perimeterM: number = parseFloat(validity.perimeter_m);
-
-    // Min area: 100 m², max: 5 km²
-    if (areaM2 < 100) {
-      res.status(400).json({ success: false, error: 'Territory too small (min 100 m²)', territory: null, merged: false });
-      return;
-    }
-    if (areaM2 > 5_000_000) {
-      res.status(400).json({ success: false, error: 'Territory too large (max 5 km²)', territory: null, merged: false });
-      return;
-    }
-
-    // Find all enemy territories that overlap with the new polygon
-    const enemyOverlaps = await prisma.$queryRaw<any[]>`
-      SELECT t.id, t.owner_id, t.clan_id, t.area_m2::float AS area_m2
-      FROM territories t
-      WHERE t.owner_id != ${userId}
-        AND ST_Intersects(t.polygon, ST_GeomFromText(${wkt}, 4326))
-    `;
 
     let conqueredCount = 0;
+    let anyMerged = false;
+    let firstTerritory: any = null;
 
-    for (const enemy of enemyOverlaps) {
-      const oldArea: number = parseFloat(enemy.area_m2);
+    // Process each valid polygon piece independently (handles self-intersecting paths)
+    for (const piece of polygonPieces) {
+      const pieceWkt: string    = piece.piece_wkt;
+      const pieceAreaM2: number = parseFloat(piece.area_m2);
+      const piecePerimM: number = parseFloat(piece.perimeter_m);
 
-      // Get the largest remaining piece of enemy territory after clipping
-      const pieces = await prisma.$queryRaw<any[]>`
-        SELECT
-          ST_AsText((dp).geom)                   AS piece_wkt,
-          ST_Area((dp).geom::geography)           AS piece_area,
-          ST_Perimeter((dp).geom::geography)      AS piece_perimeter
-        FROM (
-          SELECT ST_Dump(
-            ST_MakeValid(ST_Difference(
-              (SELECT polygon FROM territories WHERE id = ${enemy.id}),
-              ST_GeomFromText(${wkt}, 4326)
-            ))
-          ) AS dp
-        ) AS dumped
-        WHERE ST_GeometryType((dp).geom) = 'ST_Polygon'
-          AND ST_Area((dp).geom::geography) >= 100
-        ORDER BY piece_area DESC
-        LIMIT 1
+      // --- Enemy overlaps ---
+      const enemyOverlaps = await prisma.$queryRaw<any[]>`
+        SELECT t.id, t.owner_id, t.clan_id, t.area_m2::float AS area_m2
+        FROM territories t
+        WHERE t.owner_id != ${userId}
+          AND ST_Intersects(t.polygon, ST_GeomFromText(${pieceWkt}, 4326))
       `;
 
-      conqueredCount++;
+      for (const enemy of enemyOverlaps) {
+        const oldArea: number = parseFloat(enemy.area_m2);
+        const remains = await prisma.$queryRaw<any[]>`
+          SELECT
+            ST_AsText((dp).geom)               AS piece_wkt,
+            ST_Area((dp).geom::geography)      AS piece_area,
+            ST_Perimeter((dp).geom::geography) AS piece_perimeter
+          FROM (
+            SELECT ST_Dump(ST_MakeValid(ST_Difference(
+              (SELECT polygon FROM territories WHERE id = ${enemy.id}),
+              ST_GeomFromText(${pieceWkt}, 4326)
+            ))) AS dp
+          ) AS dumped
+          WHERE ST_GeometryType((dp).geom) = 'ST_Polygon'
+            AND ST_Area((dp).geom::geography) >= 100
+          ORDER BY piece_area DESC
+          LIMIT 1
+        `;
 
-      if (pieces.length === 0) {
-        // Full capture: no valid remainder — delete enemy territory
-        await prisma.$executeRaw`DELETE FROM territories WHERE id = ${enemy.id}`;
-        emitTerritoryDeleted(enemy.id);
+        conqueredCount++;
 
+        if (remains.length === 0) {
+          await prisma.$executeRaw`DELETE FROM territories WHERE id = ${enemy.id}`;
+          emitTerritoryDeleted(enemy.id);
+          await prisma.user.update({
+            where: { id: enemy.owner_id },
+            data: { totalAreaM2: { decrement: oldArea }, territoriesCount: { decrement: 1 } },
+          });
+          if (enemy.clan_id) {
+            await prisma.$executeRaw`
+              UPDATE clans
+              SET total_area_m2     = (SELECT COALESCE(SUM(area_m2), 0) FROM territories WHERE clan_id::text = ${enemy.clan_id}),
+                  territories_count = (SELECT COUNT(*) FROM territories WHERE clan_id::text = ${enemy.clan_id})
+              WHERE id::text = ${enemy.clan_id}
+            `;
+          }
+        } else {
+          const rem = remains[0];
+          const newArea: number = parseFloat(rem.piece_area);
+          await prisma.$executeRaw`
+            UPDATE territories
+            SET polygon     = ST_GeomFromText(${rem.piece_wkt}, 4326),
+                area_m2     = ${newArea},
+                perimeter_m = ${parseFloat(rem.piece_perimeter)},
+                updated_at  = NOW()
+            WHERE id = ${enemy.id}
+          `;
+          await prisma.user.update({
+            where: { id: enemy.owner_id },
+            data: { totalAreaM2: { decrement: oldArea - newArea } },
+          });
+          if (enemy.clan_id) {
+            await prisma.$executeRaw`
+              UPDATE clans
+              SET total_area_m2     = (SELECT COALESCE(SUM(area_m2), 0) FROM territories WHERE clan_id::text = ${enemy.clan_id}),
+                  territories_count = (SELECT COUNT(*) FROM territories WHERE clan_id::text = ${enemy.clan_id})
+              WHERE id::text = ${enemy.clan_id}
+            `;
+          }
+          const [updatedRow] = await prisma.$queryRaw<any[]>`
+            SELECT t.id, t.owner_id, t.clan_id, t.area_m2, t.perimeter_m, t.captured_at, t.updated_at,
+                   ST_AsGeoJSON(t.polygon)::json AS geojson,
+                   u.username AS owner_username, u.color AS owner_color, c.color AS clan_color
+            FROM territories t JOIN users u ON u.id = t.owner_id LEFT JOIN clans c ON c.id = t.clan_id
+            WHERE t.id = ${enemy.id}
+          `;
+          emitTerritoryUpdate(rowToTerritory(updatedRow));
+        }
+      }
+
+      // --- Own overlaps (merge) ---
+      const ownOverlaps = await prisma.$queryRaw<any[]>`
+        SELECT t.id FROM territories t
+        WHERE t.owner_id = ${userId}
+          AND ST_Intersects(t.polygon, ST_GeomFromText(${pieceWkt}, 4326))
+      `;
+
+      let territoryId: string;
+
+      if (ownOverlaps.length > 0) {
+        anyMerged = true;
+        const overlapIds = ownOverlaps.map((o: any) => o.id);
+
+        const [mergedGeo] = await prisma.$queryRaw<any[]>`
+          SELECT
+            ST_AsText(ST_Union(
+              ARRAY_APPEND(
+                ARRAY(SELECT polygon FROM territories WHERE id = ANY(ARRAY[${overlapIds}]::uuid[])),
+                ST_GeomFromText(${pieceWkt}, 4326)
+              )
+            )) AS merged_wkt,
+            ST_Area(ST_Union(
+              ARRAY_APPEND(
+                ARRAY(SELECT polygon FROM territories WHERE id = ANY(ARRAY[${overlapIds}]::uuid[])),
+                ST_GeomFromText(${pieceWkt}, 4326)
+              )
+            )::geography) AS merged_area,
+            ST_Perimeter(ST_Union(
+              ARRAY_APPEND(
+                ARRAY(SELECT polygon FROM territories WHERE id = ANY(ARRAY[${overlapIds}]::uuid[])),
+                ST_GeomFromText(${pieceWkt}, 4326)
+              )
+            )::geography) AS merged_perimeter
+        `;
+
+        const [oldAreas] = await prisma.$queryRaw<any[]>`
+          SELECT SUM(area_m2) AS total FROM territories WHERE id = ANY(ARRAY[${overlapIds}]::uuid[])
+        `;
+        const oldTotalArea: number = parseFloat(oldAreas?.total ?? '0');
+
+        await prisma.$executeRaw`DELETE FROM territories WHERE id = ANY(ARRAY[${overlapIds}]::uuid[])`;
+
+        const [created] = await prisma.$queryRaw<any[]>`
+          INSERT INTO territories (id, owner_id, clan_id, polygon, area_m2, perimeter_m, captured_at, updated_at)
+          VALUES (gen_random_uuid(), ${userId}, ${user.clanId},
+                  ST_GeomFromText(${mergedGeo.merged_wkt}, 4326),
+                  ${parseFloat(mergedGeo.merged_area)}, ${parseFloat(mergedGeo.merged_perimeter)},
+                  NOW(), NOW())
+          RETURNING id
+        `;
+        territoryId = created.id;
+
+        const netGain = parseFloat(mergedGeo.merged_area) - oldTotalArea;
         await prisma.user.update({
-          where: { id: enemy.owner_id },
+          where: { id: userId },
           data: {
-            totalAreaM2: { decrement: oldArea },
-            territoriesCount: { decrement: 1 },
+            totalAreaM2:     { increment: netGain },
+            territoriesCount: { increment: 1 - overlapIds.length },
+            capturesCount:   { increment: 1 },
           },
         });
-
-        if (enemy.clan_id) {
-          await prisma.$executeRaw`
-            UPDATE clans
-            SET total_area_m2 = (SELECT COALESCE(SUM(area_m2), 0) FROM territories WHERE clan_id = ${enemy.clan_id}),
-                territories_count = (SELECT COUNT(*) FROM territories WHERE clan_id = ${enemy.clan_id})
-            WHERE id = ${enemy.clan_id}
-          `;
-        }
       } else {
-        // Partial capture: trim enemy territory to the largest remaining piece
-        const piece = pieces[0];
-        const newArea: number = parseFloat(piece.piece_area);
-        const areaLost = oldArea - newArea;
-
-        await prisma.$executeRaw`
-          UPDATE territories
-          SET polygon    = ST_GeomFromText(${piece.piece_wkt}, 4326),
-              area_m2    = ${newArea},
-              perimeter_m = ${parseFloat(piece.piece_perimeter)},
-              updated_at = NOW()
-          WHERE id = ${enemy.id}
+        const [created] = await prisma.$queryRaw<any[]>`
+          INSERT INTO territories (id, owner_id, clan_id, polygon, area_m2, perimeter_m, captured_at, updated_at)
+          VALUES (gen_random_uuid(), ${userId}, ${user.clanId},
+                  ST_GeomFromText(${pieceWkt}, 4326),
+                  ${pieceAreaM2}, ${piecePerimM}, NOW(), NOW())
+          RETURNING id
         `;
+        territoryId = created.id;
 
         await prisma.user.update({
-          where: { id: enemy.owner_id },
-          data: { totalAreaM2: { decrement: areaLost } },
+          where: { id: userId },
+          data: {
+            totalAreaM2:     { increment: pieceAreaM2 },
+            territoriesCount: { increment: 1 },
+            capturesCount:   { increment: 1 },
+          },
         });
-
-        if (enemy.clan_id) {
-          await prisma.$executeRaw`
-            UPDATE clans
-            SET total_area_m2 = (SELECT COALESCE(SUM(area_m2), 0) FROM territories WHERE clan_id = ${enemy.clan_id}),
-                territories_count = (SELECT COUNT(*) FROM territories WHERE clan_id = ${enemy.clan_id})
-            WHERE id = ${enemy.clan_id}
-          `;
-        }
-
-        const [updatedRow] = await prisma.$queryRaw<any[]>`
-          SELECT
-            t.id, t.owner_id, t.clan_id, t.area_m2, t.perimeter_m,
-            t.captured_at, t.updated_at,
-            ST_AsGeoJSON(t.polygon)::json AS geojson,
-            u.username AS owner_username, u.color AS owner_color,
-            c.color AS clan_color
-          FROM territories t
-          JOIN users u ON u.id = t.owner_id
-          LEFT JOIN clans c ON c.id = t.clan_id
-          WHERE t.id = ${enemy.id}
-        `;
-        emitTerritoryUpdate(rowToTerritory(updatedRow));
       }
+
+      // Fetch and broadcast
+      const [result] = await prisma.$queryRaw<any[]>`
+        SELECT t.id, t.owner_id, t.clan_id, t.area_m2, t.perimeter_m, t.captured_at, t.updated_at,
+               ST_AsGeoJSON(t.polygon)::json AS geojson,
+               u.username AS owner_username, u.color AS owner_color, c.color AS clan_color
+        FROM territories t JOIN users u ON u.id = t.owner_id LEFT JOIN clans c ON c.id = t.clan_id
+        WHERE t.id = ${territoryId}
+      `;
+      const territory = rowToTerritory(result);
+      emitTerritoryUpdate(territory);
+      if (!firstTerritory) firstTerritory = territory;
     }
 
-    // Check if this overlaps with user's own territories (merge)
-    const ownOverlaps = await prisma.$queryRaw<any[]>`
-      SELECT t.id
-      FROM territories t
-      WHERE t.owner_id = ${userId}
-        AND ST_Intersects(
-          t.polygon,
-          ST_GeomFromText(${wkt}, 4326)
-        )
-    `;
-
-    let merged = false;
-    let territoryId: string;
-
-    if (ownOverlaps.length > 0) {
-      // Merge: union all overlapping territories + new polygon
-      merged = true;
-      const overlapIds = ownOverlaps.map((o) => o.id);
-      const idList = overlapIds.map((id: string) => `'${id}'`).join(',');
-
-      const [mergedGeo] = await prisma.$queryRaw<any[]>`
-        SELECT
-          ST_AsGeoJSON(
-            ST_Union(
-              ARRAY_APPEND(
-                ARRAY(SELECT polygon FROM territories WHERE id = ANY(ARRAY[${overlapIds}]::uuid[])),
-                ST_GeomFromText(${wkt}, 4326)
-              )
-            )
-          )::json AS geojson,
-          ST_Area(
-            ST_Union(
-              ARRAY_APPEND(
-                ARRAY(SELECT polygon FROM territories WHERE id = ANY(ARRAY[${overlapIds}]::uuid[])),
-                ST_GeomFromText(${wkt}, 4326)
-              )
-            )::geography
-          ) AS merged_area,
-          ST_Perimeter(
-            ST_Union(
-              ARRAY_APPEND(
-                ARRAY(SELECT polygon FROM territories WHERE id = ANY(ARRAY[${overlapIds}]::uuid[])),
-                ST_GeomFromText(${wkt}, 4326)
-              )
-            )::geography
-          ) AS merged_perimeter
-      `;
-
-      // Delete old overlapping territories
-      const oldAreas = await prisma.$queryRaw<any[]>`
-        SELECT SUM(area_m2) AS total FROM territories WHERE id = ANY(ARRAY[${overlapIds}]::uuid[])
-      `;
-      const oldTotalArea: number = parseFloat(oldAreas[0]?.total ?? '0');
-      const oldCount: number = overlapIds.length;
-
-      await prisma.$executeRaw`DELETE FROM territories WHERE id = ANY(ARRAY[${overlapIds}]::uuid[])`;
-
-      // Create merged territory
-      const [created] = await prisma.$queryRaw<any[]>`
-        INSERT INTO territories (id, owner_id, clan_id, polygon, area_m2, perimeter_m, captured_at, updated_at)
-        VALUES (
-          gen_random_uuid(),
-          ${userId},
-          ${user.clanId},
-          ST_GeomFromText(${wkt}, 4326),
-          ${parseFloat(mergedGeo.merged_area)},
-          ${parseFloat(mergedGeo.merged_perimeter)},
-          NOW(), NOW()
-        )
-        RETURNING id, area_m2, perimeter_m, captured_at, updated_at
-      `;
-      territoryId = created.id;
-
-      // Update user stats
-      const netAreaGain = parseFloat(mergedGeo.merged_area) - oldTotalArea;
-      await prisma.user.update({
-        where: { id: userId },
-        data: {
-          totalAreaM2: { increment: netAreaGain },
-          territoriesCount: { increment: 1 - oldCount },
-          capturesCount: { increment: 1 },
-        },
-      });
-    } else {
-      // New territory
-      const [created] = await prisma.$queryRaw<any[]>`
-        INSERT INTO territories (id, owner_id, clan_id, polygon, area_m2, perimeter_m, captured_at, updated_at)
-        VALUES (
-          gen_random_uuid(),
-          ${userId},
-          ${user.clanId},
-          ST_GeomFromText(${wkt}, 4326),
-          ${areaM2},
-          ${perimeterM},
-          NOW(), NOW()
-        )
-        RETURNING id, area_m2, perimeter_m, captured_at, updated_at
-      `;
-      territoryId = created.id;
-
-      await prisma.user.update({
-        where: { id: userId },
-        data: {
-          totalAreaM2: { increment: areaM2 },
-          territoriesCount: { increment: 1 },
-          capturesCount: { increment: 1 },
-        },
-      });
-    }
-
-    // Update clan stats if in clan
+    // Update clan stats once at the end
     if (user.clanId) {
       await prisma.$executeRaw`
         UPDATE clans
-        SET total_area_m2 = (
-          SELECT COALESCE(SUM(area_m2), 0) FROM territories WHERE clan_id = ${user.clanId}
-        ),
-        territories_count = (
-          SELECT COUNT(*) FROM territories WHERE clan_id = ${user.clanId}
-        )
-        WHERE id = ${user.clanId}
+        SET total_area_m2     = (SELECT COALESCE(SUM(area_m2), 0) FROM territories WHERE clan_id::text = ${user.clanId}),
+            territories_count = (SELECT COUNT(*) FROM territories WHERE clan_id::text = ${user.clanId})
+        WHERE id::text = ${user.clanId}
       `;
     }
 
-    // Fetch the created territory for response
-    const [result] = await prisma.$queryRaw<any[]>`
-      SELECT
-        t.id, t.owner_id, t.clan_id, t.area_m2, t.perimeter_m,
-        t.captured_at, t.updated_at,
-        ST_AsGeoJSON(t.polygon)::json AS geojson,
-        u.username AS owner_username, u.color AS owner_color,
-        c.color AS clan_color
-      FROM territories t
-      JOIN users u ON u.id = t.owner_id
-      LEFT JOIN clans c ON c.id = t.clan_id
-      WHERE t.id = ${territoryId}
-    `;
-
-    const territory = rowToTerritory(result);
-
-    // Broadcast via WebSocket
-    emitTerritoryUpdate(territory);
-
-    res.json({ success: true, territory, merged, conquered: conqueredCount, error: null });
+    res.json({
+      success: true,
+      territory: firstTerritory,
+      merged: anyMerged || polygonPieces.length > 1,
+      conquered: conqueredCount,
+      error: null,
+    });
   } catch (err) {
     console.error('[Territories] capture error:', err);
     res.status(500).json({ success: false, error: 'Internal server error', territory: null, merged: false });
