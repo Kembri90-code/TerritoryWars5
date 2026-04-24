@@ -553,6 +553,42 @@ Response (самопересекающийся маршрут — 2 област
 
 ---
 
+---
+
+## План на следующую сессию (сессия 5)
+
+| # | Фича | Затронутые файлы |
+|---|------|-----------------|
+| 1 | **Цвет полигонов клана** — лидер выбирает цвет в настройках клана; все полигоны клана перекрашиваются | `ClanScreen.kt`, `clans.ts` (PUT), `YandexMapView.kt` |
+| 2 | **Перекраска при вступлении** — территории игрока принимают `clanColor` при вступлении в клан | `YandexMapView.kt` (уже есть поле `clan_color`, нужно проверить рендер) |
+| 3 | **Аватарка клана** — лидер загружает картинку; хранится в `/uploads/clans/:id.jpg` | `ClanApi.kt`, `ClanScreen.kt`, `clans.ts` (POST `/clans/:id/avatar`) |
+| 4 | **Аватарка пользователя** — игрок загружает в профиле; отображается через Coil | `ProfileScreen.kt`, `UserApi.kt`, `users.ts` (PATCH `/users/me/avatar`) |
+| 5 | **Push «Территория перезахвачена»** — уведомление владельцу когда кто-то захватывает его территорию | `territories.ts` (capture endpoint), `NotificationService.ts` |
+
+### Технические заметки к плану
+
+**П.1 — Цвет клана:**
+- В `formatClan` уже есть поле `color` (цвет тега)
+- Нужно решить: это тот же цвет или отдельное поле `polygon_color`?
+- Проще всего: использовать уже существующий `clan.color` для полигонов клана
+
+**П.2 — Рендер цвета:**
+- В `TerritoryDto` уже есть `clan_color`
+- В `YandexMapView.kt` проверить что при `clanColor != null` полигон рисуется в `clanColor`, а не в `ownerColor`
+
+**П.3 и П.4 — Аватарки:**
+- Сервер уже имеет `multer` upload middleware (`server/src/middleware/upload.ts`)
+- Папка `/uploads` смонтирована в Docker, раздаётся Nginx
+- На Android: `ActivityResultContracts.GetContent()` → multipart upload через Retrofit
+- Отображение: Coil `AsyncImage` уже в зависимостях
+
+**П.5 — Push при захвате:**
+- В `territories.ts` capture endpoint: после `emitTerritoryDeleted(enemy.id)` или `emitTerritoryUpdate()`
+- Добавить `NotificationService.notifyTerritoryLost(enemy.owner_id, attackerUsername, areaM2)`
+- В `NotificationService.ts`: новый метод аналогичный `notifyClanJoinRequest`
+
+---
+
 ## GitHub репозиторий
 
 ```
