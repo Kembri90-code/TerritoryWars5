@@ -1,8 +1,14 @@
 package com.territorywars.presentation.clan
 
+import android.content.Context
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.territorywars.data.remote.api.ClanApi
+import dagger.hilt.android.qualifiers.ApplicationContext
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import com.territorywars.data.remote.api.ClanActivityDto
 import com.territorywars.data.remote.api.ClanDto
 import com.territorywars.data.remote.api.ClanJoinRequestDto
@@ -77,6 +83,7 @@ data class ClanState(
 
 @HiltViewModel
 class ClanViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val userApi: UserApi,
     private val clanApi: ClanApi,
     private val leaderboardApi: LeaderboardApi
@@ -425,6 +432,37 @@ class ClanViewModel @Inject constructor(
         }
     }
 
+    fun uploadClanAvatar(uri: Uri) {
+        val clanId = _state.value.myClan?.id ?: return
+        viewModelScope.launch {
+            _state.update { it.copy(isActionLoading = true, actionError = null) }
+            try {
+                val stream = context.contentResolver.openInputStream(uri) ?: run {
+                    _state.update { it.copy(isActionLoading = false, actionError = "Не удалось открыть файл") }
+                    return@launch
+                }
+                val bytes = stream.readBytes()
+                stream.close()
+                val mimeType = context.contentResolver.getType(uri) ?: "image/jpeg"
+                val ext = when (mimeType) { "image/png" -> "png"; "image/webp" -> "webp"; else -> "jpg" }
+                val part = MultipartBody.Part.createFormData(
+                    "avatar", "avatar.$ext", bytes.toRequestBody(mimeType.toMediaType())
+                )
+                val response = clanApi.uploadClanAvatar(clanId, part)
+                if (response.isSuccessful) {
+                    _state.update {
+                        it.copy(isActionLoading = false, myClan = response.body()!!.toDomain(),
+                            successMessage = "✓ Аватарка клана обновлена")
+                    }
+                } else {
+                    _state.update { it.copy(isActionLoading = false, actionError = "Не удалось загрузить аватарку") }
+                }
+            } catch (_: Exception) {
+                _state.update { it.copy(isActionLoading = false, actionError = "Ошибка загрузки") }
+            }
+        }
+    }
+
     fun dismissSuccessMessage() {
         _state.update { it.copy(successMessage = null) }
     }
@@ -438,7 +476,7 @@ class ClanViewModel @Inject constructor(
 
 private fun ClanDto.toDomain() = Clan(
     id = id, name = name, tag = tag, leaderId = leaderId, color = color,
-    description = description, totalAreaM2 = totalAreaM2,
+    avatarUrl = avatarUrl, description = description, totalAreaM2 = totalAreaM2,
     membersCount = membersCount, maxMembers = maxMembers, createdAt = createdAt
 )
 

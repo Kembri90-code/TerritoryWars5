@@ -1,7 +1,11 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
+import path from 'path';
+import fs from 'fs';
 import { prisma } from '../prisma';
 import { requireAuth } from '../middleware/auth';
+import { uploadAvatar } from '../middleware/upload';
+import { config } from '../config';
 import { NotificationService } from '../services/NotificationService';
 
 const router = Router();
@@ -20,6 +24,7 @@ function formatClan(clan: any, membersCount?: number) {
     tag: clan.tag,
     leader_id: clan.leaderId,
     color: clan.color,
+    avatar_url: clan.avatarUrl ?? null,
     description: clan.description ?? null,
     total_area_m2: clan.totalAreaM2,
     members_count: membersCount ?? clan._count?.members ?? clan.members?.length ?? 0,
@@ -132,6 +137,34 @@ router.put('/:id', requireAuth, async (req: Request, res: Response) => {
     console.error('[Clans] update error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
+});
+
+// POST /clans/:id/avatar — leader uploads clan avatar
+router.post('/:id/avatar', requireAuth, (req: Request, res: Response) => {
+  uploadAvatar(req, res, async (err) => {
+    if (err) { res.status(400).json({ error: err.message }); return; }
+    if (!req.file) { res.status(400).json({ error: 'No file uploaded' }); return; }
+    try {
+      const clan = await prisma.clan.findUnique({ where: { id: req.params.id } });
+      if (!clan) { res.status(404).json({ error: 'Clan not found' }); return; }
+      if (clan.leaderId !== req.user!.userId) { res.status(403).json({ error: 'Only the clan leader can upload avatar' }); return; }
+      // Delete old avatar if local
+      if (clan.avatarUrl && !clan.avatarUrl.startsWith('http')) {
+        const oldPath = path.join(config.uploads.dir, path.basename(clan.avatarUrl));
+        if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+      }
+      const avatarUrl = `/uploads/${req.file.filename}`;
+      const updated = await prisma.clan.update({
+        where: { id: req.params.id },
+        data: { avatarUrl },
+        include: { _count: { select: { members: true } } },
+      });
+      res.json(formatClan(updated));
+    } catch (dbErr) {
+      console.error('[Clans] uploadAvatar error:', dbErr);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  });
 });
 
 // GET /clans/:id/members

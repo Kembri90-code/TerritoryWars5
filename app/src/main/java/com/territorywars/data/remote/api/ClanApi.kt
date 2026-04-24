@@ -2,6 +2,7 @@ package com.territorywars.data.remote.api
 
 import com.territorywars.data.remote.dto.TerritoryDto
 import com.google.gson.annotations.SerializedName
+import okhttp3.MultipartBody
 import retrofit2.Response
 import retrofit2.http.*
 
@@ -27,6 +28,7 @@ data class ClanDto(
     @SerializedName("tag") val tag: String,
     @SerializedName("leader_id") val leaderId: String,
     @SerializedName("color") val color: String,
+    @SerializedName("avatar_url") val avatarUrl: String?,
     @SerializedName("description") val description: String?,
     @SerializedName("total_area_m2") val totalAreaM2: Double,
     @SerializedName("members_count") val membersCount: Int,
@@ -111,4 +113,11 @@ interface ClanApi {
         @Path("id") id: String,
         @Query("limit") limit: Int = 30
     ): Response<List<ClanActivityDto>>
+
+    @Multipart
+    @POST("clans/{id}/avatar")
+    suspend fun uploadClanAvatar(
+        @Path("id") id: String,
+        @Part avatar: MultipartBody.Part
+    ): Response<ClanDto>
 }

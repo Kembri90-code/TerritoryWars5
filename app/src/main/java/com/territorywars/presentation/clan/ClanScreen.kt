@@ -1,5 +1,8 @@
 package com.territorywars.presentation.clan
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -22,6 +25,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -30,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
 import com.territorywars.domain.model.Clan
 import com.territorywars.domain.model.ClanLeaderboardEntry
 import com.territorywars.domain.model.ClanMember
@@ -67,6 +72,10 @@ fun ClanScreen(
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showRequestDialog by remember { mutableStateOf(false) }
     var requestTargetClan by remember { mutableStateOf<ClanLeaderboardEntry?>(null) }
+
+    val clanAvatarPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri: Uri? -> uri?.let { viewModel.uploadClanAvatar(it) } }
 
     val primary      = MaterialTheme.colorScheme.primary
     val bg           = MaterialTheme.colorScheme.background
@@ -172,6 +181,7 @@ fun ClanScreen(
                             onAcceptRequest = viewModel::acceptJoinRequest,
                             onDeclineRequest = viewModel::declineJoinRequest,
                             onTabSelected = viewModel::selectTab,
+                            onAvatarUpload = { clanAvatarPicker.launch("image/*") },
                         )
                     }
                     else -> {
@@ -397,6 +407,7 @@ private fun MyClanContent(
     onAcceptRequest: (String) -> Unit,
     onDeclineRequest: (String) -> Unit,
     onTabSelected: (ClanTab) -> Unit,
+    onAvatarUpload: () -> Unit,
 ) {
     val clanColor = remember(clan.color) { parseColor(clan.color) }
     val amILeader = members.any { it.userId == myUserId && it.role == ClanRole.LEADER }
@@ -416,16 +427,31 @@ private fun MyClanContent(
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        // Clan avatar / tag box
                         Box(
                             contentAlignment = Alignment.Center,
                             modifier = Modifier
-                                .size(60.dp)
+                                .size(64.dp)
                                 .shadow(8.dp, RoundedCornerShape(16.dp), ambientColor = clanColor, spotColor = clanColor)
                                 .clip(RoundedCornerShape(16.dp))
                                 .background(clanColor.copy(alpha = 0.2f))
-                                .border(2.dp, clanColor, RoundedCornerShape(16.dp)),
+                                .border(2.dp, clanColor, RoundedCornerShape(16.dp))
+                                .then(if (amILeader) Modifier.clickable { onAvatarUpload() } else Modifier),
                         ) {
-                            Text(clan.tag, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold, fontFamily = DmMono, color = clanColor)
+                            if (!clan.avatarUrl.isNullOrBlank()) {
+                                val fullUrl = if (clan.avatarUrl!!.startsWith("http")) clan.avatarUrl
+                                              else "http://93.183.74.141${clan.avatarUrl}"
+                                AsyncImage(model = fullUrl, contentDescription = "Аватар клана",
+                                    contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(16.dp)))
+                            } else {
+                                Text(clan.tag, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold, fontFamily = DmMono, color = clanColor)
+                            }
+                            if (amILeader) {
+                                Box(Modifier.align(Alignment.BottomEnd).size(18.dp).clip(CircleShape).background(clanColor),
+                                    contentAlignment = Alignment.Center) {
+                                    Icon(Icons.Outlined.CameraAlt, null, tint = Color.White, modifier = Modifier.size(10.dp))
+                                }
+                            }
                         }
                         Column {
                             Text(clan.name, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, fontFamily = PlusJakartaSans, color = MaterialTheme.colorScheme.onSurface)

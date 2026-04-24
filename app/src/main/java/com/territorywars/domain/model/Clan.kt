@@ -6,6 +6,7 @@ data class Clan(
     val tag: String,
     val leaderId: String,
     val color: String,
+    val avatarUrl: String?,
     val description: String?,
     val totalAreaM2: Double,
     val membersCount: Int,

@@ -73,6 +73,7 @@ model Clan {
   tag             String   @unique
   leaderId        String   @unique @map("leader_id")
   color           String   @default("#FF6D00")
+  avatarUrl       String?  @map("avatar_url")
   description     String?
   maxMembers      Int      @default(50) @map("max_members")
   totalAreaM2     Float    @default(0) @map("total_area_m2")
