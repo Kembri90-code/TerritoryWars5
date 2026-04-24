@@ -1,5 +1,8 @@
 package com.territorywars.presentation.profile
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -20,11 +23,13 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
 import com.territorywars.domain.model.User
 import com.territorywars.presentation.map.AppBottomNav
 import com.territorywars.presentation.map.PlayerMarker
@@ -90,6 +95,7 @@ fun ProfileScreen(
                     onColorChange = viewModel::changeColor,
                     onMarkerChange = viewModel::changeMarker,
                     onLogout = viewModel::logout,
+                    onAvatarUpload = viewModel::uploadAvatar,
                 )
             }
         }
@@ -115,9 +121,14 @@ private fun ProfileContent(
     onColorChange: (String) -> Unit,
     onMarkerChange: (PlayerMarker) -> Unit,
     onLogout: () -> Unit,
+    onAvatarUpload: (Uri) -> Unit,
 ) {
     val userColor = remember(user.color) { parseColor(user.color) }
     val primary   = MaterialTheme.colorScheme.primary
+
+    val avatarPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri: Uri? -> uri?.let { onAvatarUpload(it) } }
     val bg        = MaterialTheme.colorScheme.background
     val surface   = MaterialTheme.colorScheme.surface
     val surfCont  = MaterialTheme.colorScheme.surfaceVariant
@@ -188,22 +199,52 @@ private fun ProfileContent(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
-                    // Avatar
+                    // Avatar — кликабельный, открывает галерею
                     Box(
                         contentAlignment = Alignment.Center,
                         modifier = Modifier
                             .size(72.dp)
                             .clip(CircleShape)
                             .background(userColor.copy(alpha = 0.18f))
-                            .border(3.dp, userColor, CircleShape),
+                            .border(3.dp, userColor, CircleShape)
+                            .clickable { avatarPicker.launch("image/*") },
                     ) {
-                        Text(
-                            text = user.username.take(2).uppercase(),
-                            fontSize = 26.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            fontFamily = PlusJakartaSans,
-                            color = userColor,
-                        )
+                        if (!user.avatarUrl.isNullOrBlank()) {
+                            val fullUrl = if (user.avatarUrl!!.startsWith("http"))
+                                user.avatarUrl
+                            else
+                                "http://93.183.74.141${user.avatarUrl}"
+                            AsyncImage(
+                                model = fullUrl,
+                                contentDescription = "Аватар",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        } else {
+                            Text(
+                                text = user.username.take(2).uppercase(),
+                                fontSize = 26.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                fontFamily = PlusJakartaSans,
+                                color = userColor,
+                            )
+                        }
+                        // Overlay камера
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .size(22.dp)
+                                .clip(CircleShape)
+                                .background(primary),
+                        ) {
+                            Icon(Icons.Outlined.CameraAlt, contentDescription = null, tint = Color.White, modifier = Modifier.size(12.dp))
+                        }
+                        if (isSaving) {
+                            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.4f)), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp, color = Color.White)
+                            }
+                        }
                     }
 
                     Column {

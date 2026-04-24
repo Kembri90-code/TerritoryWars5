@@ -1,5 +1,7 @@
 package com.territorywars.presentation.profile
 
+import android.content.Context
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.territorywars.data.local.TokenDataStore
@@ -9,11 +11,15 @@ import com.territorywars.domain.model.User
 import com.territorywars.presentation.map.PlayerMarker
 import com.territorywars.presentation.map.playerMarkerById
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import javax.inject.Inject
 
 data class ProfileState(
@@ -27,6 +33,7 @@ data class ProfileState(
 
 @HiltViewModel
 class ProfileViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val userApi: UserApi,
     private val tokenDataStore: TokenDataStore
 ) : ViewModel() {
@@ -81,6 +88,38 @@ class ProfileViewModel @Inject constructor(
         viewModelScope.launch {
             tokenDataStore.savePlayerMarker(marker.id)
             _state.update { it.copy(selectedMarker = marker) }
+        }
+    }
+
+    fun uploadAvatar(uri: Uri) {
+        viewModelScope.launch {
+            _state.update { it.copy(isSaving = true, error = null) }
+            try {
+                val stream = context.contentResolver.openInputStream(uri) ?: run {
+                    _state.update { it.copy(isSaving = false, error = "Не удалось открыть файл") }
+                    return@launch
+                }
+                val bytes = stream.readBytes()
+                stream.close()
+                val mimeType = context.contentResolver.getType(uri) ?: "image/jpeg"
+                val ext = when (mimeType) {
+                    "image/png"  -> "png"
+                    "image/webp" -> "webp"
+                    else         -> "jpg"
+                }
+                val part = MultipartBody.Part.createFormData(
+                    "avatar", "avatar.$ext",
+                    bytes.toRequestBody(mimeType.toMediaType())
+                )
+                val response = userApi.uploadAvatar(part)
+                if (response.isSuccessful) {
+                    _state.update { it.copy(user = response.body()!!.toDomain(), isSaving = false) }
+                } else {
+                    _state.update { it.copy(isSaving = false, error = "Не удалось загрузить фото") }
+                }
+            } catch (_: Exception) {
+                _state.update { it.copy(isSaving = false, error = "Ошибка загрузки") }
+            }
         }
     }
 
