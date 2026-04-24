@@ -17,8 +17,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
-import coil.compose.SubcomposeAsyncImage
-import coil.compose.SubcomposeAsyncImageContent
+import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.territorywars.presentation.theme.PlusJakartaSans
 
@@ -49,36 +48,26 @@ fun UserAvatar(
             .background(color.copy(alpha = 0.2f))
             .then(borderModifier),
     ) {
+        // Initials — base layer, always visible until photo loads
+        Text(
+            text = username.take(2).uppercase(),
+            fontSize = (size.value * 0.33f).sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = PlusJakartaSans,
+            color = color,
+        )
+
+        // Photo — overlay on top of initials; covers them when loaded
         if (fullUrl != null) {
-            SubcomposeAsyncImage(
+            AsyncImage(
                 model = ImageRequest.Builder(LocalContext.current)
                     .data(fullUrl)
                     .crossfade(true)
                     .build(),
                 contentDescription = username,
+                contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize().clip(CircleShape),
-                content = {
-                    when (painter.state) {
-                        is coil.compose.AsyncImagePainter.State.Success ->
-                            SubcomposeAsyncImageContent(contentScale = ContentScale.Crop)
-                        else ->
-                            Initials(username = username, color = color, size = size)
-                    }
-                }
             )
-        } else {
-            Initials(username = username, color = color, size = size)
         }
     }
-}
-
-@Composable
-private fun Initials(username: String, color: Color, size: Dp) {
-    Text(
-        text = username.take(2).uppercase(),
-        fontSize = (size.value * 0.33f).sp,
-        fontWeight = FontWeight.Bold,
-        fontFamily = PlusJakartaSans,
-        color = color,
-    )
 }
