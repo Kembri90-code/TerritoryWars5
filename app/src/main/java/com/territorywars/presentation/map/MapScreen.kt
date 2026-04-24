@@ -153,7 +153,7 @@ fun MapScreen(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .navigationBarsPadding()
-                .padding(end = 12.dp, bottom = if (state.isCapturing) 140.dp else 80.dp),
+                .padding(end = 12.dp, bottom = if (state.isCapturing) 140.dp else 136.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             GlassFab(onClick = viewModel::centerOnMyLocation, glassBg = glassBg, outline = outline) {
