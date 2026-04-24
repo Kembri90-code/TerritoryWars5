@@ -1,7 +1,7 @@
 # Territory Wars — Полное описание проекта
 
 > Документ написан для быстрого ввода в контекст нового чата с ИИ.
-> Последнее обновление: 2026-04-23 (сессия 3)
+> Последнее обновление: 2026-04-24 (сессия 4)
 
 ---
 
@@ -102,6 +102,7 @@ buildConfigField("String", "WS_URL",   "\"ws://93.183.74.141\"")
 | GET  | `/api/clans/:id/requests` | Список заявок (лидер) |
 | POST | `/api/clans/:id/requests/:userId/accept` | Принять заявку (лидер) |
 | DELETE | `/api/clans/:id/requests/:userId` | Отклонить заявку (лидер) |
+| GET  | `/api/clans/:id/activity?limit=30` | История захватов клана |
 | GET  | `/api/leaderboard` | Рейтинг игроков |
 | GET  | `/api/cities` | Список городов |
 | GET  | `/api/admin/*` | Административные эндпоинты |
@@ -282,10 +283,12 @@ Box(fillMaxSize) {
   GPS permission banner                  — сверху, если нет разрешения
   LegendPill "Ваши"                      — верхний правый угол (только не в захвате)
   GlassFab (GPS кнопка)                  — правый нижний угол
-    bottom = если захват: 170dp, иначе: 80dp
-  "Начать захват" кнопка                 — нижний центр (только не в захвате)
-  CaptureStatusPanel                     — НИЖНИЙ центр (только в захвате, выезжает снизу)
-    содержит: Дистанция | Время | До старта + кнопки Отмена/Замкнуть
+    bottom = если захват: 140dp, иначе: 136dp  (всегда выше кнопок)
+  Мини-статистика (Дистанция + Время)    — нижний центр, bottom=76dp (только в захвате, выезжает снизу)
+  Row [Старт] [Завершить]                — ВСЕГДА видны, нижний центр
+    bottom = захват: 12dp, иначе: 68dp (над навбаром)
+    Старт:     активен (градиент) когда не захватываем, серый когда захватываем
+    Завершить: серый когда не захватываем, красный (border + bg) когда захватываем
   AppBottomNav                           — нижний центр (только не в захвате)
   AppSnackbar                            — верхний центр (уведомления)
 }
@@ -306,48 +309,55 @@ Row(height = 60.dp) {
 ### MapViewModel — ключевые константы
 
 ```kotlin
-private const val CLOSE_RADIUS_M = 15.0          // радиус "закрытия" маршрута
-private const val MIN_POINTS = 20                 // минимум GPS-точек для захвата
-private const val BBOX_DEBOUNCE_MS = 500L         // дебаунс загрузки территорий
+private const val BBOX_DEBOUNCE_MS = 500L
 private const val GPS_INTERVAL_CAPTURING_MS = 2000L
 private const val GPS_INTERVAL_IDLE_MS = 5000L
+// CLOSE_RADIUS_M и MIN_POINTS удалены — логика завершения упрощена
 ```
 
 ### Процесс захвата (клиент)
 
-1. `startCapture()` — переключает GPS на 2 сек интервал, запускает `GpsTrackingService`
-2. `onNewLocation()` — при точности > 30м пропускает точку; накапливает `routePoints`
-3. `canFinishCapture = routePoints.size >= MIN_POINTS`
-4. `finishCapture()` — отправляет `POST /territories/capture { route_points: [...] }`
-5. Ответ парсится: `conquered`, `merged` → показывается уведомление
+1. Кнопка **Старт** — всегда видна. `startCapture()` → GPS 2 сек, запускает `GpsTrackingService`
+2. `onNewLocation()` — при точности > 30м пропускает; накапливает `routePoints`, считает `routeDistanceM`
+3. Кнопка **Завершить** — всегда видна, краснеет когда `isCapturing = true`
+4. `finishCapture()` — минимум 4 точки → отправляет `POST /territories/capture { route_points: [...] }`
+5. Ответ парсится: `conquered`, `merged` → уведомление
 6. Дополнительные территории (при самопересечении) приходят через WebSocket
+7. Нет логики `canFinishCapture`, `distanceToStartM`, `CLOSE_RADIUS_M`, `MIN_POINTS`
 
 ### Клановая система
 
 **ClanState** (в `ClanViewModel`):
 ```kotlin
 data class ClanState(
-  val myClan: Clan?,                        // null = не в клане
+  val myClan: Clan?,
   val myUserId: String?,
   val members: List<ClanMember>,
   val joinRequests: List<ClanJoinRequestItem>, // видны только лидеру
+  val activityItems: List<ClanActivityItem>,   // история захватов (вкладка История)
+  val selectedTab: ClanTab,                    // MEMBERS | TOP | HISTORY
   val topClans: List<ClanLeaderboardEntry>,    // когда не в клане
-  val isLoading, isActionLoading, error, actionError, successMessage,
+  val isLoading, isActivityLoading, isActionLoading,
+  val error, actionError, successMessage,
   val isCreating: Boolean,
-  val createForm: CreateClanForm,
-  val clanRequestsBadge: Int                // в MapState, для бейджа на вкладке
+  val createForm: CreateClanForm
 )
 ```
 
 **Функции ClanViewModel**:
 - `loadData()` — загружает клан, участников, заявки (если лидер)
+- `selectTab(tab)` — переключает вкладку; при первом открытии История запускает `loadActivity()`
+- `loadActivity()` — `GET /clans/:id/activity` → `activityItems`
 - `createClan()`, `joinClan()`, `leaveClan()`, `deleteClan()`
 - `kickMember(userId)`, `requestJoinClan(clanId)`
 - `acceptJoinRequest(userId)`, `declineJoinRequest(userId)`
 
 **ClanScreen — режимы**:
-1. Нет клана → список топ-кланов. Нажатие на клан → диалог заявки
-2. Есть клан → шапка с тегом/именем, статистика, список заявок (лидеру), список участников, кнопки Выйти/Удалить
+1. Нет клана → список топ-кланов. Нажатие → диалог заявки
+2. Есть клан → шапка (тег, имя, площадь, участники) + **3 вкладки**:
+   - **Участники** — список участников, заявки (лидеру), кнопки Выйти/Удалить
+   - **Топ** — участники отсортированы по `totalAreaM2` DESC, медали 🥇🥈🥉
+   - **История** — последние 30 захватов территорий с инициалами, именем, датой, площадью
 
 ### SocketManager — real-time обновления
 
@@ -465,8 +475,11 @@ Gradle: `./gradlew assembleDebug` из папки `TerritoryWars/`.
 - [x] Firebase push-уведомления (FCM)
 - [x] Административная веб-панель
 - [x] Компактный bottom nav (60dp, иконки 24dp, кастомный Row вместо Material3 NavigationBar)
-- [x] Панель захвата (Дистанция/Время/До старта) — внизу экрана, выезжает снизу
-- [x] GPS кнопка поднимается над панелью захвата (170dp от низа)
+- [x] Кнопки захвата **Старт** / **Завершить** — всегда видны; Завершить краснеет при захвате
+- [x] Мини-статистика (Дистанция + Время) выезжает снизу во время захвата
+- [x] GPS кнопка всегда выше кнопок (136dp idle / 140dp capturing)
+- [x] Вкладки в экране Клана: Участники / Топ / История
+- [x] Исправлен `express-rate-limit` — добавлен `app.set('trust proxy', 1)` для работы за Nginx
 
 ---
 
