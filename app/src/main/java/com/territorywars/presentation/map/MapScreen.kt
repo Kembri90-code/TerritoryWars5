@@ -2,7 +2,6 @@ package com.territorywars.presentation.map
 
 import android.Manifest
 import androidx.compose.animation.*
-import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -15,7 +14,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -97,35 +95,47 @@ fun MapScreen(
             }
         }
 
-        // ── Capture status panel ──────────────────────────────────────────────
+        // ── Capture stats pill (дистанция + время, выезжает снизу) ──────────────
         AnimatedVisibility(
             visible = state.isCapturing,
-            enter = slideInVertically { it } + fadeIn(),
-            exit = slideOutVertically { it } + fadeOut(),
+            enter = fadeIn() + slideInVertically { it },
+            exit = fadeOut() + slideOutVertically { it },
             modifier = Modifier.align(Alignment.BottomCenter),
         ) {
-            CaptureStatusPanel(
-                distanceM = state.routeDistanceM,
-                durationSec = state.captureDurationSec,
-                distanceToStartM = state.distanceToStartM,
-                canFinish = state.canFinishCapture,
-                onCancel = viewModel::cancelCapture,
-                onFinish = viewModel::finishCapture,
-                primary = primary,
-                tertiary = tertiary,
-                glassBg = glassBg,
-                outline = outline,
-                errorColor = errorColor,
-                errorCont = errorCont,
-                onBg = onBg,
-                onSurfVar = onSurfVar,
+            val minutes = state.captureDurationSec / 60
+            val seconds = state.captureDurationSec % 60
+            val distStr = if (state.routeDistanceM >= 1000)
+                "${"%.2f".format(state.routeDistanceM / 1000)} км"
+            else "${state.routeDistanceM.toInt()} м"
+
+            Row(
                 modifier = Modifier
                     .navigationBarsPadding()
-                    .padding(horizontal = 10.dp, vertical = 8.dp),
-            )
+                    .padding(bottom = 76.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(glassBg)
+                    .border(1.dp, primary.copy(alpha = 0.3f), RoundedCornerShape(16.dp))
+                    .padding(horizontal = 28.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(28.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("ДИСТАНЦИЯ", fontSize = 9.sp, fontFamily = PlusJakartaSans,
+                        fontWeight = FontWeight.Bold, color = onSurfVar, letterSpacing = 0.8.sp)
+                    Text(distStr, fontSize = 20.sp, fontFamily = DmMono,
+                        fontWeight = FontWeight.Bold, color = onBg, letterSpacing = (-0.5).sp)
+                }
+                VerticalDivider(modifier = Modifier.height(32.dp), color = outline)
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("ВРЕМЯ", fontSize = 9.sp, fontFamily = PlusJakartaSans,
+                        fontWeight = FontWeight.Bold, color = onSurfVar, letterSpacing = 0.8.sp)
+                    Text("%02d:%02d".format(minutes, seconds), fontSize = 20.sp, fontFamily = DmMono,
+                        fontWeight = FontWeight.Bold, color = onBg, letterSpacing = (-0.5).sp)
+                }
+            }
         }
 
-        // ── Territory legend (top-right) ──────────────────────────────────────
+        // ── Territory legend (top-right, только не в захвате) ────────────────
         if (!state.isCapturing) {
             Column(
                 modifier = Modifier
@@ -138,58 +148,96 @@ fun MapScreen(
             }
         }
 
-        // ── FABs (right side) ─────────────────────────────────────────────────
+        // ── GPS FAB ───────────────────────────────────────────────────────────
         Column(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .navigationBarsPadding()
-                .padding(end = 12.dp, bottom = if (state.isCapturing) 170.dp else 80.dp),
+                .padding(end = 12.dp, bottom = if (state.isCapturing) 140.dp else 80.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             GlassFab(onClick = viewModel::centerOnMyLocation, glassBg = glassBg, outline = outline) {
-                Icon(Icons.Outlined.MyLocation, contentDescription = "Мои координаты", tint = primary, modifier = Modifier.size(18.dp))
+                Icon(Icons.Outlined.MyLocation, contentDescription = "Мои координаты",
+                    tint = primary, modifier = Modifier.size(18.dp))
             }
         }
 
-        // ── Start capture button ──────────────────────────────────────────────
-        AnimatedVisibility(
-            visible = !state.isCapturing,
-            enter = fadeIn() + scaleIn(),
-            exit = fadeOut() + scaleOut(),
-            modifier = Modifier.align(Alignment.BottomCenter),
+        // ── Старт / Завершить — всегда видны ─────────────────────────────────
+        Row(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(
+                    start = 16.dp, end = 16.dp,
+                    bottom = if (state.isCapturing) 12.dp else 68.dp,
+                )
+                .fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
+            // Старт — активен только когда не захватываем
             Box(
+                contentAlignment = Alignment.Center,
                 modifier = Modifier
-                    .navigationBarsPadding()
-                    .padding(bottom = 96.dp),
+                    .weight(1f)
+                    .height(52.dp)
+                    .clip(RoundedCornerShape(26.dp))
+                    .background(
+                        if (!state.isCapturing)
+                            Brush.linearGradient(listOf(primary, MaterialTheme.colorScheme.primaryContainer))
+                        else
+                            Brush.linearGradient(listOf(surface, surface))
+                    )
+                    .border(
+                        width = if (state.isCapturing) 1.dp else 0.dp,
+                        color = if (state.isCapturing) outline else Color.Transparent,
+                        shape = RoundedCornerShape(26.dp),
+                    )
+                    .clickable(enabled = !state.isCapturing && !state.isLoading) {
+                        viewModel.startCapture()
+                    },
             ) {
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(30.dp))
-                        .background(Brush.linearGradient(listOf(primary, MaterialTheme.colorScheme.primaryContainer)))
-                        .clickable { viewModel.startCapture() }
-                        .padding(horizontal = 36.dp, vertical = 15.dp),
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        Icon(Icons.Outlined.PlayArrow, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
-                        Text(
-                            text = "Начать захват",
-                            color = Color.White,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            fontFamily = PlusJakartaSans,
-                            letterSpacing = 0.3.sp,
-                        )
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Outlined.PlayArrow, contentDescription = null,
+                        tint = if (!state.isCapturing) Color.White else onSurfVar,
+                        modifier = Modifier.size(16.dp))
+                    Text("Старт",
+                        color = if (!state.isCapturing) Color.White else onSurfVar,
+                        fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = PlusJakartaSans)
+                }
+            }
+
+            // Завершить — краснеет когда идёт захват
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(52.dp)
+                    .clip(RoundedCornerShape(26.dp))
+                    .background(if (state.isCapturing) errorColor.copy(alpha = 0.12f) else surface)
+                    .border(1.5.dp,
+                        if (state.isCapturing) errorColor else outline,
+                        RoundedCornerShape(26.dp))
+                    .clickable(enabled = state.isCapturing && !state.isLoading) {
+                        viewModel.finishCapture()
+                    },
+            ) {
+                if (state.isLoading) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp, color = errorColor)
+                } else {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Outlined.CheckCircle, contentDescription = null,
+                            tint = if (state.isCapturing) errorColor else onSurfVar,
+                            modifier = Modifier.size(16.dp))
+                        Text("Завершить",
+                            color = if (state.isCapturing) errorColor else onSurfVar,
+                            fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = PlusJakartaSans)
                     }
                 }
             }
         }
 
-        // ── Bottom navigation bar ─────────────────────────────────────────────
+        // ── Bottom navigation bar (только не в захвате) ───────────────────────
         if (!state.isCapturing) {
             AppBottomNav(
                 active = "map",
@@ -218,151 +266,6 @@ fun MapScreen(
                     .padding(top = 8.dp, start = 12.dp, end = 12.dp),
             )
         }
-    }
-}
-
-// ── Capture status panel ──────────────────────────────────────────────────────
-
-@Composable
-private fun CaptureStatusPanel(
-    distanceM: Double,
-    durationSec: Long,
-    distanceToStartM: Double,
-    canFinish: Boolean,
-    onCancel: () -> Unit,
-    onFinish: () -> Unit,
-    primary: Color,
-    tertiary: Color,
-    glassBg: Color,
-    outline: Color,
-    errorColor: Color,
-    errorCont: Color,
-    onBg: Color,
-    onSurfVar: Color,
-    modifier: Modifier = Modifier,
-) {
-    val minutes = durationSec / 60
-    val seconds = durationSec % 60
-    val distStr = if (distanceM >= 1000)
-        "${"%.2f".format(distanceM / 1000)} км" else "${distanceM.toInt()} м"
-    val toStartStr = if (distanceToStartM > 9999) "—" else "${distanceToStartM.toInt()} м"
-
-    val progress = (distanceM / 300.0).coerceIn(0.0, 1.0).toFloat()
-
-    // Pulse animation for finish button
-    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-    val pulseScale by infiniteTransition.animateFloat(
-        initialValue = 1f,
-        targetValue = 1.03f,
-        animationSpec = infiniteRepeatable(tween(900), RepeatMode.Reverse),
-        label = "scale",
-    )
-
-    Surface(
-        modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        color = glassBg,
-        shadowElevation = 8.dp,
-        border = androidx.compose.foundation.BorderStroke(1.dp, primary.copy(alpha = 0.35f)),
-    ) {
-        Column {
-            // Progress bar
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(3.dp)
-                    .background(outline),
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxHeight()
-                        .fillMaxWidth(progress)
-                        .background(Brush.horizontalGradient(listOf(primary, tertiary))),
-                )
-            }
-
-            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
-                // Stats row
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                ) {
-                    CaptureStatItem("Дистанция", distStr, onBg, onSurfVar)
-                    VerticalDivider(modifier = Modifier.height(38.dp), color = outline)
-                    CaptureStatItem("Время", "%02d:%02d".format(minutes, seconds), onBg, onSurfVar)
-                    VerticalDivider(modifier = Modifier.height(38.dp), color = outline)
-                    CaptureStatItem(
-                        label = "До старта",
-                        value = toStartStr,
-                        valueColor = if (distanceToStartM <= 30.0) primary else onBg,
-                        labelColor = onSurfVar,
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                // Buttons
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    // Cancel
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(44.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(errorCont)
-                            .border(1.5.dp, errorColor.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
-                            .clickable { onCancel() },
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Icon(Icons.Outlined.Close, contentDescription = null, tint = errorColor, modifier = Modifier.size(13.dp))
-                            Text("Отмена", color = errorColor, fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = PlusJakartaSans)
-                        }
-                    }
-
-                    // Finish (only when canFinish)
-                    AnimatedVisibility(visible = canFinish, modifier = Modifier.weight(2f)) {
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier
-                                .height(44.dp)
-                                .scale(pulseScale)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(Brush.linearGradient(listOf(primary, tertiary)))
-                                .clickable { onFinish() },
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
-                                Text("Замкнуть", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, fontFamily = PlusJakartaSans)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun CaptureStatItem(label: String, value: String, valueColor: Color, labelColor: Color) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            text = label,
-            color = labelColor,
-            fontSize = 10.sp,
-            fontFamily = PlusJakartaSans,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 0.8.sp,
-        )
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = value,
-            color = valueColor,
-            fontSize = 19.sp,
-            fontFamily = DmMono,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = (-0.5).sp,
-        )
     }
 }
 

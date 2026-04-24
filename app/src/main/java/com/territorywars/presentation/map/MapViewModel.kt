@@ -39,8 +39,6 @@ data class MapState(
     val routePoints: List<RoutePoint> = emptyList(),
     val routeDistanceM: Double = 0.0,
     val captureDurationSec: Long = 0L,
-    val distanceToStartM: Double = Double.MAX_VALUE,
-    val canFinishCapture: Boolean = false,
     val currentLat: Double? = null,
     val currentLng: Double? = null,
     val notification: String? = null,
@@ -49,8 +47,6 @@ data class MapState(
     val clanRequestsBadge: Int = 0
 )
 
-private const val CLOSE_RADIUS_M = 15.0
-private const val MIN_POINTS = 20
 private const val BBOX_DEBOUNCE_MS = 500L
 private const val GPS_INTERVAL_CAPTURING_MS = 2000L
 private const val GPS_INTERVAL_IDLE_MS = 5000L
@@ -186,18 +182,11 @@ class MapViewModel @Inject constructor(
             val point = RoutePoint(lat, lng, System.currentTimeMillis(), accuracy)
             val newPoints = _state.value.routePoints + point
             val newDistance = calcTotalDistance(newPoints)
-            val distToStart = if (newPoints.isNotEmpty()) {
-                haversineM(lat, lng, newPoints.first().lat, newPoints.first().lng)
-            } else Double.MAX_VALUE
-
-            val canFinish = newPoints.size >= MIN_POINTS
 
             _state.update {
                 it.copy(
                     routePoints = newPoints,
                     routeDistanceM = newDistance,
-                    distanceToStartM = distToStart,
-                    canFinishCapture = canFinish
                 )
             }
         }
@@ -268,13 +257,13 @@ class MapViewModel @Inject constructor(
 
     fun cancelCapture() {
         stopCapture()
-        _state.update { it.copy(isCapturing = false, routePoints = emptyList(), canFinishCapture = false) }
+        _state.update { it.copy(isCapturing = false, routePoints = emptyList()) }
     }
 
     fun finishCapture() {
         val points = _state.value.routePoints
-        if (points.size < MIN_POINTS) {
-            _state.update { it.copy(notification = "Недостаточно точек маршрута. Продолжайте идти.") }
+        if (points.size < 4) {
+            _state.update { it.copy(notification = "Слишком короткий маршрут") }
             return
         }
         stopCapture()
@@ -299,7 +288,6 @@ class MapViewModel @Inject constructor(
                             s.copy(
                                 isCapturing = false,
                                 routePoints = emptyList(),
-                                canFinishCapture = false,
                                 territories = s.territories + newTerritory,
                                 isLoading = false,
                                 notification = notification
