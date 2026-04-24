@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../prisma';
 import { requireAuth } from '../middleware/auth';
 import { emitTerritoryDeleted, emitTerritoryUpdate } from '../ws/socket';
+import { NotificationService } from '../services/NotificationService';
 
 const router = Router();
 
@@ -252,9 +253,12 @@ router.post('/capture', requireAuth, async (req: Request, res: Response) => {
               WHERE id::text = ${enemy.clan_id}
             `;
           }
+          // Push: полный захват
+          NotificationService.notifyTerritoryTakeover(enemy.owner_id, userId, user.username, oldArea).catch(() => {});
         } else {
           const rem = remains[0];
           const newArea: number = parseFloat(rem.piece_area);
+          const lostArea = oldArea - newArea;
           await prisma.$executeRaw`
             UPDATE territories
             SET polygon     = ST_GeomFromText(${rem.piece_wkt}, 4326),
@@ -265,7 +269,7 @@ router.post('/capture', requireAuth, async (req: Request, res: Response) => {
           `;
           await prisma.user.update({
             where: { id: enemy.owner_id },
-            data: { totalAreaM2: { decrement: oldArea - newArea } },
+            data: { totalAreaM2: { decrement: lostArea } },
           });
           if (enemy.clan_id) {
             await prisma.$executeRaw`
@@ -283,6 +287,8 @@ router.post('/capture', requireAuth, async (req: Request, res: Response) => {
             WHERE t.id = ${enemy.id}
           `;
           emitTerritoryUpdate(rowToTerritory(updatedRow));
+          // Push: частичный захват
+          NotificationService.notifyPartialTakeover(enemy.owner_id, userId, user.username, lostArea).catch(() => {});
         }
       }
 
