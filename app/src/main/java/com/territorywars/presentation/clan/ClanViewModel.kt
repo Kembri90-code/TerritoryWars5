@@ -3,6 +3,7 @@ package com.territorywars.presentation.clan
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.territorywars.data.remote.api.ClanApi
+import com.territorywars.data.remote.api.ClanActivityDto
 import com.territorywars.data.remote.api.ClanDto
 import com.territorywars.data.remote.api.ClanJoinRequestDto
 import com.territorywars.data.remote.api.ClanMemberDto
@@ -31,6 +32,17 @@ data class ClanJoinRequestItem(
     val createdAt: String
 )
 
+data class ClanActivityItem(
+    val territoryId: String,
+    val ownerId: String,
+    val ownerUsername: String,
+    val ownerColor: String,
+    val areaM2: Double,
+    val capturedAt: String
+)
+
+enum class ClanTab { MEMBERS, TOP, HISTORY }
+
 // ---- Форма создания клана ----
 data class CreateClanForm(
     val name: String = "",
@@ -46,21 +58,19 @@ data class CreateClanForm(
 
 // ---- Состояние экрана клана ----
 data class ClanState(
-    // Данные о клане пользователя (null = не в клане)
     val myClan: Clan? = null,
     val myUserId: String? = null,
     val members: List<ClanMember> = emptyList(),
-    // Заявки на вступление (видны только лидеру)
     val joinRequests: List<ClanJoinRequestItem> = emptyList(),
-    // Топ кланов (когда пользователь без клана)
+    val activityItems: List<ClanActivityItem> = emptyList(),
+    val selectedTab: ClanTab = ClanTab.MEMBERS,
     val topClans: List<ClanLeaderboardEntry> = emptyList(),
-    // UI-состояния
     val isLoading: Boolean = false,
+    val isActivityLoading: Boolean = false,
     val isActionLoading: Boolean = false,
     val error: String? = null,
     val actionError: String? = null,
     val successMessage: String? = null,
-    // Режим создания клана
     val isCreating: Boolean = false,
     val createForm: CreateClanForm = CreateClanForm()
 )
@@ -386,6 +396,35 @@ class ClanViewModel @Inject constructor(
         }
     }
 
+    fun selectTab(tab: ClanTab) {
+        _state.update { it.copy(selectedTab = tab) }
+        if (tab == ClanTab.HISTORY && _state.value.activityItems.isEmpty()) {
+            loadActivity()
+        }
+    }
+
+    fun loadActivity() {
+        val clanId = _state.value.myClan?.id ?: return
+        viewModelScope.launch {
+            _state.update { it.copy(isActivityLoading = true) }
+            try {
+                val resp = clanApi.getClanActivity(clanId)
+                if (resp.isSuccessful) {
+                    _state.update {
+                        it.copy(
+                            isActivityLoading = false,
+                            activityItems = resp.body()!!.map { dto -> dto.toItem() }
+                        )
+                    }
+                } else {
+                    _state.update { it.copy(isActivityLoading = false) }
+                }
+            } catch (_: Exception) {
+                _state.update { it.copy(isActivityLoading = false) }
+            }
+        }
+    }
+
     fun dismissSuccessMessage() {
         _state.update { it.copy(successMessage = null) }
     }
@@ -425,4 +464,10 @@ private fun ClanJoinRequestDto.toItem() = ClanJoinRequestItem(
 private fun ClanLeaderboardDto.toDomain() = ClanLeaderboardEntry(
     rank = rank, clanId = clanId, name = name, tag = tag, color = color,
     totalAreaM2 = totalAreaM2, membersCount = membersCount, territoriesCount = territoriesCount
+)
+
+private fun ClanActivityDto.toItem() = ClanActivityItem(
+    territoryId = territoryId, ownerId = ownerId,
+    ownerUsername = ownerUsername, ownerColor = ownerColor,
+    areaM2 = areaM2, capturedAt = capturedAt
 )

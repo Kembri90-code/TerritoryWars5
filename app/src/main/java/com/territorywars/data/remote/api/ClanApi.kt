@@ -34,6 +34,15 @@ data class ClanDto(
     @SerializedName("created_at") val createdAt: String
 )
 
+data class ClanActivityDto(
+    @SerializedName("territory_id") val territoryId: String,
+    @SerializedName("owner_id") val ownerId: String,
+    @SerializedName("owner_username") val ownerUsername: String,
+    @SerializedName("owner_color") val ownerColor: String,
+    @SerializedName("area_m2") val areaM2: Double,
+    @SerializedName("captured_at") val capturedAt: String
+)
+
 data class ClanMemberDto(
     @SerializedName("user_id") val userId: String,
     @SerializedName("username") val username: String,
@@ -96,4 +105,10 @@ interface ClanApi {
 
     @GET("clans/{id}/territories")
     suspend fun getClanTerritories(@Path("id") id: String): Response<List<TerritoryDto>>
+
+    @GET("clans/{id}/activity")
+    suspend fun getClanActivity(
+        @Path("id") id: String,
+        @Query("limit") limit: Int = 30
+    ): Response<List<ClanActivityDto>>
 }

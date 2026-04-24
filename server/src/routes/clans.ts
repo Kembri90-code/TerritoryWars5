@@ -355,6 +355,35 @@ router.get('/:id/territories', requireAuth, async (req: Request, res: Response) 
   }
 });
 
+// GET /clans/:id/activity — recent territory captures in the clan
+router.get('/:id/activity', requireAuth, async (req: Request, res: Response) => {
+  const clanId = req.params.id;
+  const limit = Math.min(parseInt(req.query.limit as string) || 30, 100);
+  try {
+    const rows = await prisma.$queryRaw<any[]>`
+      SELECT
+        t.id, t.owner_id, t.area_m2, t.captured_at, t.updated_at,
+        u.username AS owner_username, u.color AS owner_color
+      FROM territories t
+      JOIN users u ON u.id = t.owner_id
+      WHERE t.clan_id::text = ${clanId}
+      ORDER BY t.captured_at DESC
+      LIMIT ${limit}
+    `;
+    res.json(rows.map((r) => ({
+      territory_id: r.id,
+      owner_id: r.owner_id,
+      owner_username: r.owner_username,
+      owner_color: r.owner_color,
+      area_m2: parseFloat(r.area_m2),
+      captured_at: r.captured_at instanceof Date ? r.captured_at.toISOString() : String(r.captured_at),
+    })));
+  } catch (err) {
+    console.error('[Clans] getActivity error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // POST /clans/:id/request — player sends join request
 router.post('/:id/request', requireAuth, async (req: Request, res: Response) => {
   const userId = req.user!.userId;

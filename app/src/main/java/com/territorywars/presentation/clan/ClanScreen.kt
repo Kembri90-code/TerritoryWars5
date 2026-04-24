@@ -159,6 +159,9 @@ fun ClanScreen(
                             clan = state.myClan!!,
                             members = state.members,
                             joinRequests = state.joinRequests,
+                            activityItems = state.activityItems,
+                            selectedTab = state.selectedTab,
+                            isActivityLoading = state.isActivityLoading,
                             myUserId = state.myUserId,
                             isActionLoading = state.isActionLoading,
                             primary = primary,
@@ -168,6 +171,7 @@ fun ClanScreen(
                             onKickMember = viewModel::kickMember,
                             onAcceptRequest = viewModel::acceptJoinRequest,
                             onDeclineRequest = viewModel::declineJoinRequest,
+                            onTabSelected = viewModel::selectTab,
                         )
                     }
                     else -> {
@@ -380,6 +384,9 @@ private fun MyClanContent(
     clan: Clan,
     members: List<ClanMember>,
     joinRequests: List<ClanJoinRequestItem>,
+    activityItems: List<ClanActivityItem>,
+    selectedTab: ClanTab,
+    isActivityLoading: Boolean,
     myUserId: String?,
     isActionLoading: Boolean,
     primary: Color,
@@ -389,6 +396,7 @@ private fun MyClanContent(
     onKickMember: (String) -> Unit,
     onAcceptRequest: (String) -> Unit,
     onDeclineRequest: (String) -> Unit,
+    onTabSelected: (ClanTab) -> Unit,
 ) {
     val clanColor = remember(clan.color) { parseColor(clan.color) }
     val amILeader = members.any { it.userId == myUserId && it.role == ClanRole.LEADER }
@@ -403,14 +411,11 @@ private fun MyClanContent(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(
-                        Brush.verticalGradient(listOf(clanColor.copy(alpha = 0.22f), bg))
-                    )
+                    .background(Brush.verticalGradient(listOf(clanColor.copy(alpha = 0.22f), bg)))
                     .padding(horizontal = 20.dp, vertical = 24.dp),
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                        // Tag box with glow
                         Box(
                             contentAlignment = Alignment.Center,
                             modifier = Modifier
@@ -420,13 +425,7 @@ private fun MyClanContent(
                                 .background(clanColor.copy(alpha = 0.2f))
                                 .border(2.dp, clanColor, RoundedCornerShape(16.dp)),
                         ) {
-                            Text(
-                                text = clan.tag,
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                fontFamily = DmMono,
-                                color = clanColor,
-                            )
+                            Text(clan.tag, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold, fontFamily = DmMono, color = clanColor)
                         }
                         Column {
                             Text(clan.name, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, fontFamily = PlusJakartaSans, color = MaterialTheme.colorScheme.onSurface)
@@ -435,12 +434,7 @@ private fun MyClanContent(
                             }
                         }
                     }
-
-                    // Stats
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly,
-                    ) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                         ClanStatCard("Площадь", formatArea(clan.totalAreaM2), clanColor)
                         ClanStatCard("Участники", "${members.size}/${clan.maxMembers}", clanColor)
                     }
@@ -449,94 +443,104 @@ private fun MyClanContent(
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         }
 
-        // Join requests section — visible to leader only
-        if (amILeader && joinRequests.isNotEmpty()) {
-            item {
-                Text(
-                    text = "ЗАЯВКИ (${joinRequests.size})",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = PlusJakartaSans,
-                    color = MaterialTheme.colorScheme.error,
-                    letterSpacing = 0.8.sp,
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
-                )
-            }
-            items(joinRequests) { request ->
-                JoinRequestRow(
-                    request = request,
-                    primary = primary,
-                    onClick = { acceptTarget = request },
-                )
-            }
-            item { HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant) }
-        }
-
-        // Members label
+        // Tabs
         item {
-            Text(
-                text = "Участники",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = PlusJakartaSans,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                letterSpacing = 0.8.sp,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
-            )
-        }
-
-        items(members.sortedBy { it.role.ordinal }) { member ->
-            MemberRow(
-                member = member,
-                isMe = member.userId == myUserId,
-                canKick = amILeader && member.userId != myUserId && member.role != ClanRole.LEADER,
-                primary = primary,
-                onKick = { onKickMember(member.userId) },
-            )
-        }
-
-        // Action buttons
-        item {
-            Spacer(modifier = Modifier.height(16.dp))
-            Column(
-                modifier = Modifier.padding(horizontal = 20.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+            TabRow(
+                selectedTabIndex = selectedTab.ordinal,
+                containerColor = MaterialTheme.colorScheme.surface,
+                contentColor = primary,
             ) {
-                if (!amILeader) {
-                    OutlinedButton(
-                        onClick = onLeaveClick,
-                        enabled = !isActionLoading,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(14.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.5.dp, MaterialTheme.colorScheme.error),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                    ) {
-                        if (isActionLoading) {
-                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.error)
-                        } else {
-                            Icon(Icons.Outlined.ExitToApp, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Покинуть клан", fontFamily = PlusJakartaSans, fontWeight = FontWeight.SemiBold)
+                listOf("Участники", "Топ", "История").forEachIndexed { index, title ->
+                    Tab(
+                        selected = selectedTab.ordinal == index,
+                        onClick = { onTabSelected(ClanTab.entries[index]) },
+                        text = { Text(title, fontSize = 12.sp, fontFamily = PlusJakartaSans, fontWeight = FontWeight.SemiBold) },
+                    )
+                }
+            }
+        }
+
+        // Tab: Участники
+        if (selectedTab == ClanTab.MEMBERS) {
+            if (amILeader && joinRequests.isNotEmpty()) {
+                item {
+                    Text("ЗАЯВКИ (${joinRequests.size})", fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                        fontFamily = PlusJakartaSans, color = MaterialTheme.colorScheme.error,
+                        letterSpacing = 0.8.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp))
+                }
+                items(joinRequests) { request ->
+                    JoinRequestRow(request = request, primary = primary, onClick = { acceptTarget = request })
+                }
+                item { HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant) }
+            }
+            item {
+                Text("УЧАСТНИКИ", fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = PlusJakartaSans,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, letterSpacing = 0.8.sp,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp))
+            }
+            items(members.sortedBy { it.role.ordinal }) { member ->
+                MemberRow(member = member, isMe = member.userId == myUserId,
+                    canKick = amILeader && member.userId != myUserId && member.role != ClanRole.LEADER,
+                    primary = primary, onKick = { onKickMember(member.userId) })
+            }
+            item {
+                Spacer(Modifier.height(16.dp))
+                Column(modifier = Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (!amILeader) {
+                        OutlinedButton(onClick = onLeaveClick, enabled = !isActionLoading,
+                            modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.5.dp, MaterialTheme.colorScheme.error),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
+                            if (isActionLoading) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.error)
+                            else { Icon(Icons.Outlined.ExitToApp, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("Покинуть клан", fontFamily = PlusJakartaSans, fontWeight = FontWeight.SemiBold) }
+                        }
+                    }
+                    if (amILeader) {
+                        OutlinedButton(onClick = onDeleteClick, enabled = !isActionLoading,
+                            modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.5.dp, MaterialTheme.colorScheme.error),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
+                            if (isActionLoading) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.error)
+                            else { Icon(Icons.Outlined.DeleteForever, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("Удалить клан", fontFamily = PlusJakartaSans, fontWeight = FontWeight.SemiBold) }
                         }
                     }
                 }
-                if (amILeader) {
-                    OutlinedButton(
-                        onClick = onDeleteClick,
-                        enabled = !isActionLoading,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(14.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.5.dp, MaterialTheme.colorScheme.error),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                    ) {
-                        if (isActionLoading) {
-                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.error)
-                        } else {
-                            Icon(Icons.Outlined.DeleteForever, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Удалить клан", fontFamily = PlusJakartaSans, fontWeight = FontWeight.SemiBold)
-                        }
+            }
+        }
+
+        // Tab: Топ
+        if (selectedTab == ClanTab.TOP) {
+            val sorted = members.sortedByDescending { it.totalAreaM2 }
+            if (sorted.isEmpty()) {
+                item {
+                    Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
+                        Text("Нет данных", fontFamily = PlusJakartaSans, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
+                }
+            } else {
+                itemsIndexed(sorted) { index, member ->
+                    TopMemberRow(rank = index + 1, member = member, isMe = member.userId == myUserId, primary = primary)
+                }
+            }
+        }
+
+        // Tab: История
+        if (selectedTab == ClanTab.HISTORY) {
+            if (isActivityLoading) {
+                item {
+                    Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = primary)
+                    }
+                }
+            } else if (activityItems.isEmpty()) {
+                item {
+                    Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
+                        Text("Активности пока нет", fontFamily = PlusJakartaSans, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            } else {
+                items(activityItems) { activity ->
+                    ActivityRow(activity = activity, primary = primary)
                 }
             }
         }
@@ -615,6 +619,61 @@ private fun JoinRequestRow(
             Text(formatArea(request.totalAreaM2), fontSize = 11.sp, fontFamily = DmMono, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+    }
+}
+
+@Composable
+private fun TopMemberRow(rank: Int, member: ClanMember, isMe: Boolean, primary: Color) {
+    val color = remember(member.color) { parseColor(member.color) }
+    val rankColor = when (rank) {
+        1 -> Color(0xFFFFD700)
+        2 -> Color(0xFFC0C0C0)
+        3 -> Color(0xFFCD7F32)
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(if (isMe) primary.copy(alpha = 0.06f) else Color.Transparent)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text("#$rank", fontSize = 15.sp, fontWeight = FontWeight.ExtraBold, fontFamily = DmMono, color = rankColor, modifier = Modifier.width(32.dp))
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(36.dp).clip(CircleShape).background(color.copy(0.2f))) {
+            Text(member.username.take(2).uppercase(), fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = DmMono, color = color)
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            Text(member.username + if (isMe) " (я)" else "", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, fontFamily = PlusJakartaSans, color = MaterialTheme.colorScheme.onSurface)
+        }
+        Text(formatArea(member.totalAreaM2), fontSize = 13.sp, fontFamily = DmMono, fontWeight = FontWeight.Bold, color = primary)
+    }
+}
+
+@Composable
+private fun ActivityRow(activity: ClanActivityItem, primary: Color) {
+    val color = remember(activity.ownerColor) { parseColor(activity.ownerColor) }
+    val date = remember(activity.capturedAt) {
+        try {
+            val parser = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.getDefault())
+            val d = parser.parse(activity.capturedAt.take(19))
+            if (d != null) java.text.SimpleDateFormat("dd.MM HH:mm", java.util.Locale.getDefault()).format(d)
+            else activity.capturedAt.take(10)
+        } catch (_: Exception) { activity.capturedAt.take(10) }
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(36.dp).clip(CircleShape).background(color.copy(0.2f))) {
+            Text(activity.ownerUsername.take(2).uppercase(), fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = DmMono, color = color)
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            Text(activity.ownerUsername, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, fontFamily = PlusJakartaSans, color = MaterialTheme.colorScheme.onSurface)
+            Text("захватил $date", fontSize = 11.sp, fontFamily = PlusJakartaSans, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Text(formatArea(activity.areaM2), fontSize = 13.sp, fontFamily = DmMono, fontWeight = FontWeight.Bold, color = primary)
     }
 }
 
