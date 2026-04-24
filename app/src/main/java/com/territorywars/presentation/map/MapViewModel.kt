@@ -44,12 +44,19 @@ data class MapState(
     val notification: String? = null,
     val isLoading: Boolean = false,
     val lastBbox: String? = null,
-    val clanRequestsBadge: Int = 0
+    val clanRequestsBadge: Int = 0,
+    // Speed anti-cheat
+    val speedWarningVisible: Boolean = false,      // первое предупреждение
+    val speedViolationActive: Boolean = false,     // идёт 2-минутный отсчёт
+    val speedViolationStartMs: Long = 0L,          // когда началась проверка
+    val speedViolationCancelled: Boolean = false,  // принудительное завершение
 )
 
 private const val BBOX_DEBOUNCE_MS = 500L
 private const val GPS_INTERVAL_CAPTURING_MS = 2000L
 private const val GPS_INTERVAL_IDLE_MS = 5000L
+private const val MAX_SPEED_KMH = 16.0
+private const val SPEED_GRACE_PERIOD_MS = 120_000L  // 2 минуты
 
 @HiltViewModel
 class MapViewModel @Inject constructor(
@@ -183,13 +190,70 @@ class MapViewModel @Inject constructor(
             val newPoints = _state.value.routePoints + point
             val newDistance = calcTotalDistance(newPoints)
 
-            _state.update {
-                it.copy(
-                    routePoints = newPoints,
-                    routeDistanceM = newDistance,
-                )
+            _state.update { it.copy(routePoints = newPoints, routeDistanceM = newDistance) }
+
+            checkSpeedViolation(newPoints)
+        }
+    }
+
+    private fun checkSpeedViolation(points: List<RoutePoint>) {
+        val s = _state.value
+        if (s.speedWarningVisible) return  // ждём пока пользователь закроет диалог
+
+        val avgSpeedKmh = calcAverageSpeedKmh(points)
+
+        if (avgSpeedKmh > MAX_SPEED_KMH) {
+            if (!s.speedViolationActive) {
+                // Первое нарушение — показываем предупреждение
+                _state.update { it.copy(speedWarningVisible = true) }
+            } else {
+                // Нарушение уже активно — проверяем истёк ли grace period
+                val elapsed = System.currentTimeMillis() - s.speedViolationStartMs
+                if (elapsed >= SPEED_GRACE_PERIOD_MS) {
+                    // 2 минуты прошло, скорость всё ещё высокая — принудительно завершаем
+                    stopCapture()
+                    _state.update {
+                        it.copy(
+                            isCapturing = false,
+                            routePoints = emptyList(),
+                            speedViolationActive = false,
+                            speedViolationCancelled = true,
+                        )
+                    }
+                }
+            }
+        } else {
+            // Скорость упала — снимаем нарушение если было активно
+            if (s.speedViolationActive) {
+                _state.update { it.copy(speedViolationActive = false, speedViolationStartMs = 0L) }
             }
         }
+    }
+
+    private fun calcAverageSpeedKmh(points: List<RoutePoint>): Double {
+        if (points.size < 2) return 0.0
+        val now = System.currentTimeMillis()
+        val recent = points.filter { now - it.timestamp <= 30_000L }  // последние 30 сек
+        if (recent.size < 2) return 0.0
+        val dist = recent.zipWithNext().sumOf { (a, b) -> haversineM(a.lat, a.lng, b.lat, b.lng) }
+        val timeMs = recent.last().timestamp - recent.first().timestamp
+        if (timeMs <= 0) return 0.0
+        return dist / timeMs * 3_600_000.0 / 1000.0  // м/мс → км/ч
+    }
+
+    fun dismissSpeedWarning() {
+        // Пользователь нажал ОК — начинаем 2-минутный отсчёт
+        _state.update {
+            it.copy(
+                speedWarningVisible = false,
+                speedViolationActive = true,
+                speedViolationStartMs = System.currentTimeMillis(),
+            )
+        }
+    }
+
+    fun dismissSpeedViolationCancelled() {
+        _state.update { it.copy(speedViolationCancelled = false) }
     }
 
     private fun onMapMoved(lat: Double, lng: Double) {

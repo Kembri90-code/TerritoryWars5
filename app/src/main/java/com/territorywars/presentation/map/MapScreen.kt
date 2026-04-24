@@ -17,6 +17,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -266,6 +267,76 @@ fun MapScreen(
                     .padding(top = 8.dp, start = 12.dp, end = 12.dp),
             )
         }
+    }
+
+    // ── Speed warning dialog ──────────────────────────────────────────────────
+    if (state.speedWarningVisible) {
+        AlertDialog(
+            onDismissRequest = {},  // нельзя закрыть свайпом — только OK
+            containerColor = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(22.dp),
+            icon = {
+                Icon(Icons.Outlined.Speed, contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(32.dp))
+            },
+            title = {
+                Text("Высокая скорость", fontFamily = PlusJakartaSans,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+            },
+            text = {
+                Text(
+                    "Скорее всего, вы движетесь на самокате или автомобиле — это противоречит правилам. " +
+                    "Снизьте скорость в течение 2 минут, иначе захват будет отменён.",
+                    fontFamily = PlusJakartaSans,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = viewModel::dismissSpeedWarning,
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
+                    Text("ОК", fontFamily = PlusJakartaSans, fontWeight = FontWeight.Bold)
+                }
+            },
+        )
+    }
+
+    // ── Speed violation cancelled dialog ─────────────────────────────────────
+    if (state.speedViolationCancelled) {
+        AlertDialog(
+            onDismissRequest = viewModel::dismissSpeedViolationCancelled,
+            containerColor = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(22.dp),
+            icon = {
+                Icon(Icons.Outlined.Cancel, contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(32.dp))
+            },
+            title = {
+                Text("Захват отменён", fontFamily = PlusJakartaSans,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+            },
+            text = {
+                Text(
+                    "Захват принудительно завершён из-за нарушений правил пользования. " +
+                    "Территория не засчитана.",
+                    fontFamily = PlusJakartaSans,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = viewModel::dismissSpeedViolationCancelled,
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.primary)) {
+                    Text("ОК", fontFamily = PlusJakartaSans, fontWeight = FontWeight.Bold)
+                }
+            },
+        )
     }
 }
 
