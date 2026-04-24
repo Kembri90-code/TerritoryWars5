@@ -88,6 +88,7 @@ router.get('/clans', requireAuth, async (req: Request, res: Response) => {
         c.name,
         c.tag,
         c.color,
+        c.avatar_url,
         c.total_area_m2,
         c.territories_count,
         COUNT(cm.user_id)::int AS members_count
@@ -104,6 +105,7 @@ router.get('/clans', requireAuth, async (req: Request, res: Response) => {
       name: r.name,
       tag: r.tag,
       color: r.color,
+      avatar_url: r.avatar_url ?? null,
       total_area_m2: parseFloat(r.total_area_m2),
       members_count: Number(r.members_count),
       territories_count: Number(r.territories_count),

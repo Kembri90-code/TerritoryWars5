@@ -117,6 +117,7 @@ private fun ClanLeaderboardDto.toDomain() = ClanLeaderboardEntry(
     name = name,
     tag = tag,
     color = color,
+    avatarUrl = avatarUrl,
     totalAreaM2 = totalAreaM2,
     membersCount = membersCount,
     territoriesCount = territoriesCount

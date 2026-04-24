@@ -17,10 +17,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.territorywars.domain.model.ClanLeaderboardEntry
@@ -448,14 +450,16 @@ private fun ClanRow(clan: ClanLeaderboardEntry, rank: Int) {
                 .background(clanColor.copy(alpha = if (MaterialTheme.colorScheme.background == Color(0xFF0C0C15)) 0.18f else 0.12f))
                 .border(1.5.dp, clanColor.copy(alpha = 0.5f), RoundedCornerShape(12.dp)),
         ) {
-            Text(
-                text = clan.tag.take(4),
-                fontSize = 10.sp,
-                fontWeight = FontWeight.ExtraBold,
-                fontFamily = PlusJakartaSans,
-                color = clanColor,
-                letterSpacing = 0.5.sp,
-            )
+            if (!clan.avatarUrl.isNullOrBlank()) {
+                val fullUrl = if (clan.avatarUrl!!.startsWith("http")) clan.avatarUrl
+                              else "http://93.183.74.141${clan.avatarUrl}"
+                AsyncImage(model = fullUrl, contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)))
+            } else {
+                Text(text = clan.tag.take(4), fontSize = 10.sp, fontWeight = FontWeight.ExtraBold,
+                    fontFamily = PlusJakartaSans, color = clanColor, letterSpacing = 0.5.sp)
+            }
         }
         Column(modifier = Modifier.weight(1f)) {
             Text(

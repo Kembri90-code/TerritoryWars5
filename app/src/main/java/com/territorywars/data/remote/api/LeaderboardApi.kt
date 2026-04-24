@@ -24,6 +24,7 @@ data class ClanLeaderboardDto(
     @SerializedName("name") val name: String,
     @SerializedName("tag") val tag: String,
     @SerializedName("color") val color: String,
+    @SerializedName("avatar_url") val avatarUrl: String?,
     @SerializedName("total_area_m2") val totalAreaM2: Double,
     @SerializedName("members_count") val membersCount: Int,
     @SerializedName("territories_count") val territoriesCount: Int

@@ -20,6 +20,7 @@ data class ClanLeaderboardEntry(
     val name: String,
     val tag: String,
     val color: String,
+    val avatarUrl: String?,
     val totalAreaM2: Double,
     val membersCount: Int,
     val territoriesCount: Int
