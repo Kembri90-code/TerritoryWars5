@@ -31,6 +31,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.territorywars.domain.model.User
+import com.territorywars.presentation.components.UserAvatar
 import com.territorywars.presentation.map.AppBottomNav
 import com.territorywars.presentation.map.PlayerMarker
 import com.territorywars.presentation.theme.DmMono
@@ -201,35 +202,19 @@ private fun ProfileContent(
                 ) {
                     // Avatar — кликабельный, открывает галерею
                     Box(
-                        contentAlignment = Alignment.Center,
                         modifier = Modifier
-                            .size(72.dp)
-                            .clip(CircleShape)
-                            .background(userColor.copy(alpha = 0.18f))
-                            .border(3.dp, userColor, CircleShape)
+                            .size(78.dp)
                             .clickable { avatarPicker.launch("image/*") },
                     ) {
-                        if (!user.avatarUrl.isNullOrBlank()) {
-                            val fullUrl = if (user.avatarUrl!!.startsWith("http"))
-                                user.avatarUrl
-                            else
-                                "http://93.183.74.141${user.avatarUrl}"
-                            AsyncImage(
-                                model = fullUrl,
-                                contentDescription = "Аватар",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize(),
-                            )
-                        } else {
-                            Text(
-                                text = user.username.take(2).uppercase(),
-                                fontSize = 26.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                fontFamily = PlusJakartaSans,
-                                color = userColor,
-                            )
-                        }
-                        // Overlay камера
+                        UserAvatar(
+                            username = user.username,
+                            avatarUrl = user.avatarUrl,
+                            color = userColor,
+                            size = 72.dp,
+                            borderModifier = Modifier.border(3.dp, userColor, CircleShape),
+                            modifier = Modifier.align(Alignment.Center),
+                        )
+                        // Camera icon overlay
                         Box(
                             contentAlignment = Alignment.Center,
                             modifier = Modifier
@@ -241,7 +226,7 @@ private fun ProfileContent(
                             Icon(Icons.Outlined.CameraAlt, contentDescription = null, tint = Color.White, modifier = Modifier.size(12.dp))
                         }
                         if (isSaving) {
-                            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.4f)), contentAlignment = Alignment.Center) {
+                            Box(Modifier.size(72.dp).align(Alignment.Center).clip(CircleShape).background(Color.Black.copy(alpha = 0.4f)), contentAlignment = Alignment.Center) {
                                 CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp, color = Color.White)
                             }
                         }

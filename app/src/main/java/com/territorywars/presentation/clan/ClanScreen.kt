@@ -41,6 +41,7 @@ import com.territorywars.domain.model.ClanMember
 import com.territorywars.domain.model.ClanRole
 import com.territorywars.presentation.components.AppTextField
 import com.territorywars.presentation.components.PrimaryButton
+import com.territorywars.presentation.components.UserAvatar
 import com.territorywars.presentation.map.AppBottomNav
 import com.territorywars.presentation.map.AppSnackbar
 import com.territorywars.presentation.theme.DmMono
@@ -633,12 +634,7 @@ private fun JoinRequestRow(
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier.size(40.dp).clip(CircleShape).background(color.copy(0.2f)),
-        ) {
-            Text(request.username.take(2).uppercase(), fontSize = 13.sp, fontWeight = FontWeight.Bold, fontFamily = DmMono, color = color)
-        }
+        UserAvatar(username = request.username, avatarUrl = request.avatarUrl, color = color, size = 40.dp)
         Spacer(Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(request.username, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, fontFamily = PlusJakartaSans, color = MaterialTheme.colorScheme.onSurface)
@@ -666,9 +662,7 @@ private fun TopMemberRow(rank: Int, member: ClanMember, isMe: Boolean, primary: 
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text("#$rank", fontSize = 15.sp, fontWeight = FontWeight.ExtraBold, fontFamily = DmMono, color = rankColor, modifier = Modifier.width(32.dp))
-        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(36.dp).clip(CircleShape).background(color.copy(0.2f))) {
-            Text(member.username.take(2).uppercase(), fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = DmMono, color = color)
-        }
+        UserAvatar(username = member.username, avatarUrl = member.avatarUrl, color = color, size = 36.dp)
         Column(modifier = Modifier.weight(1f)) {
             Text(member.username + if (isMe) " (я)" else "", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, fontFamily = PlusJakartaSans, color = MaterialTheme.colorScheme.onSurface)
         }
@@ -692,9 +686,7 @@ private fun ActivityRow(activity: ClanActivityItem, primary: Color) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(36.dp).clip(CircleShape).background(color.copy(0.2f))) {
-            Text(activity.ownerUsername.take(2).uppercase(), fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = DmMono, color = color)
-        }
+        UserAvatar(username = activity.ownerUsername, avatarUrl = null, color = color, size = 36.dp)
         Column(modifier = Modifier.weight(1f)) {
             Text(activity.ownerUsername, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, fontFamily = PlusJakartaSans, color = MaterialTheme.colorScheme.onSurface)
             Text("захватил $date", fontSize = 11.sp, fontFamily = PlusJakartaSans, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -739,13 +731,7 @@ private fun MemberRow(
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Avatar
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier.size(40.dp).clip(CircleShape).background(color.copy(alpha = 0.2f)),
-        ) {
-            Text(member.username.take(2).uppercase(), fontSize = 13.sp, fontWeight = FontWeight.Bold, fontFamily = DmMono, color = color)
-        }
+        UserAvatar(username = member.username, avatarUrl = member.avatarUrl, color = color, size = 40.dp)
         Spacer(modifier = Modifier.width(10.dp))
 
         Column(modifier = Modifier.weight(1f)) {

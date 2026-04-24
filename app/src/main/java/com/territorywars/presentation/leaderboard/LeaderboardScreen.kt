@@ -27,6 +27,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.territorywars.domain.model.ClanLeaderboardEntry
 import com.territorywars.domain.model.PlayerLeaderboardEntry
+import com.territorywars.presentation.components.UserAvatar
 import com.territorywars.presentation.map.AppBottomNav
 import com.territorywars.presentation.theme.DmMono
 import com.territorywars.presentation.theme.PlusJakartaSans
@@ -259,22 +260,13 @@ private fun Podium(players: List<PlayerLeaderboardEntry>, primary: Color, bg: Co
                     if (rank == 0) Text("👑", fontSize = 18.sp)
                     Spacer(modifier = Modifier.height(4.dp))
                     // Avatar
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .size(if (rank == 0) 46.dp else 36.dp)
-                            .clip(CircleShape)
-                            .background(playerColor.copy(alpha = 0.2f))
-                            .border(1.5.dp, playerColor.copy(alpha = 0.5f), CircleShape),
-                    ) {
-                        Text(
-                            text = player.username.take(2).uppercase(),
-                            fontSize = if (rank == 0) 14.sp else 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = PlusJakartaSans,
-                            color = playerColor,
-                        )
-                    }
+                    UserAvatar(
+                        username = player.username,
+                        avatarUrl = player.avatarUrl,
+                        color = playerColor,
+                        size = if (rank == 0) 46.dp else 36.dp,
+                        borderModifier = Modifier.border(1.5.dp, playerColor.copy(alpha = 0.5f), CircleShape),
+                    )
                     Spacer(modifier = Modifier.height(5.dp))
                     Text(
                         text = player.username,
@@ -333,21 +325,7 @@ private fun PlayerRow(player: PlayerLeaderboardEntry, rank: Int, sort: PlayerSor
             color = onSurfVar,
             modifier = Modifier.width(24.dp),
         )
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .size(36.dp)
-                .clip(CircleShape)
-                .background(playerColor.copy(alpha = 0.18f)),
-        ) {
-            Text(
-                text = player.username.take(2).uppercase(),
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = PlusJakartaSans,
-                color = playerColor,
-            )
-        }
+        UserAvatar(username = player.username, avatarUrl = player.avatarUrl, color = playerColor, size = 36.dp)
         Column(modifier = Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
