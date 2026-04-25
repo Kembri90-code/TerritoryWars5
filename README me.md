@@ -1,7 +1,7 @@
 # Territory Wars — Полное описание проекта
 
 > Документ написан для быстрого ввода в контекст нового чата с ИИ.
-> Последнее обновление: 2026-04-24 (сессия 4)
+> Последнее обновление: 2026-04-24 (сессия 5)
 
 ---
 
@@ -103,6 +103,7 @@ buildConfigField("String", "WS_URL",   "\"ws://93.183.74.141\"")
 | POST | `/api/clans/:id/requests/:userId/accept` | Принять заявку (лидер) |
 | DELETE | `/api/clans/:id/requests/:userId` | Отклонить заявку (лидер) |
 | GET  | `/api/clans/:id/activity?limit=30` | История захватов клана |
+| POST | `/api/clans/:id/avatar` | Загрузить аватарку клана (лидер, multipart) |
 | GET  | `/api/leaderboard` | Рейтинг игроков |
 | GET  | `/api/cities` | Список городов |
 | GET  | `/api/admin/*` | Административные эндпоинты |
@@ -165,8 +166,9 @@ City             — id, name, region, population, lat, lng
 Territory        — id, ownerId, clanId, polygon(geometry), areaM2, perimeterM,
                    capturedAt, updatedAt
                  — ВАЖНО: колонка polygon НЕ в схеме Prisma (raw SQL), тип: geometry(Polygon,4326)
-Clan             — id, name, tag, leaderId, color, description, maxMembers,
+Clan             — id, name, tag, leaderId, color, avatarUrl?, description, maxMembers,
                    totalAreaM2, territoriesCount
+                 — Миграция: server/prisma/migrations/add_clan_avatar.sql
 ClanMember       — userId, clanId, role (LEADER/MEMBER), joinedAt
 ClanJoinRequest  — id, userId, clanId, createdAt
                  — @@unique([userId, clanId]) — один запрос от пользователя на клан
@@ -312,18 +314,35 @@ Row(height = 60.dp) {
 private const val BBOX_DEBOUNCE_MS = 500L
 private const val GPS_INTERVAL_CAPTURING_MS = 2000L
 private const val GPS_INTERVAL_IDLE_MS = 5000L
-// CLOSE_RADIUS_M и MIN_POINTS удалены — логика завершения упрощена
+private const val MAX_SPEED_KMH = 16.0          // порог скоростного античита
+private const val SPEED_GRACE_PERIOD_MS = 120_000L // 2 минуты до принудительного завершения
 ```
 
 ### Процесс захвата (клиент)
 
 1. Кнопка **Старт** — всегда видна. `startCapture()` → GPS 2 сек, запускает `GpsTrackingService`
-2. `onNewLocation()` — при точности > 30м пропускает; накапливает `routePoints`, считает `routeDistanceM`
+2. `onNewLocation()` — при точности > 30м пропускает; накапливает `routePoints`, считает `routeDistanceM`; вызывает `checkSpeedViolation()`
 3. Кнопка **Завершить** — всегда видна, краснеет когда `isCapturing = true`
 4. `finishCapture()` — минимум 4 точки → отправляет `POST /territories/capture { route_points: [...] }`
 5. Ответ парсится: `conquered`, `merged` → уведомление
 6. Дополнительные территории (при самопересечении) приходят через WebSocket
-7. Нет логики `canFinishCapture`, `distanceToStartM`, `CLOSE_RADIUS_M`, `MIN_POINTS`
+
+### Скоростной античит (клиент)
+
+`checkSpeedViolation()` вызывается при каждом GPS-обновлении во время захвата:
+- Считает среднюю скорость за последние **30 секунд** GPS-точек
+- Если скорость > 16 км/ч → показывает диалог-предупреждение (нельзя закрыть свайпом)
+- Пользователь нажимает **ОК** → запускается 2-минутный grace period
+- Если за 2 мин скорость упала → нарушение снято, захват продолжается
+- Если 2 мин прошло и скорость всё ещё > 16 км/ч → захват принудительно отменяется, территория **не засчитывается**
+
+```
+MapState поля:
+  speedWarningVisible: Boolean     — показать диалог-предупреждение
+  speedViolationActive: Boolean    — идёт 2-минутный отсчёт
+  speedViolationStartMs: Long      — когда начался отсчёт
+  speedViolationCancelled: Boolean — показать финальный диалог отмены
+```
 
 ### Клановая система
 
@@ -348,6 +367,7 @@ data class ClanState(
 - `loadData()` — загружает клан, участников, заявки (если лидер)
 - `selectTab(tab)` — переключает вкладку; при первом открытии История запускает `loadActivity()`
 - `loadActivity()` — `GET /clans/:id/activity` → `activityItems`
+- `uploadClanAvatar(uri)` — multipart загрузка аватарки клана (`POST /clans/:id/avatar`)
 - `createClan()`, `joinClan()`, `leaveClan()`, `deleteClan()`
 - `kickMember(userId)`, `requestJoinClan(clanId)`
 - `acceptJoinRequest(userId)`, `declineJoinRequest(userId)`
@@ -480,6 +500,13 @@ Gradle: `./gradlew assembleDebug` из папки `TerritoryWars/`.
 - [x] GPS кнопка всегда выше кнопок (136dp idle / 140dp capturing)
 - [x] Вкладки в экране Клана: Участники / Топ / История
 - [x] Исправлен `express-rate-limit` — добавлен `app.set('trust proxy', 1)` для работы за Nginx
+- [x] Push «Ваша территория перезахвачена» — полный захват (`notifyTerritoryTakeover`) и частичный (`notifyPartialTakeover`)
+- [x] Аватарка пользователя — загрузка через галерею в ProfileScreen, отображение везде через `UserAvatar` composable
+- [x] Аватарка клана — лидер загружает в ClanScreen; поле `avatar_url` в БД и API
+- [x] **UserAvatar** composable — единый компонент: инициалы (base) + AsyncImage сверху с crossfade
+- [x] Аватарки пользователей в рейтинге (Podium, PlayerRow) и экране клана (MemberRow, TopMemberRow, JoinRequestRow)
+- [x] Аватарка клана в рейтинге (ClanRow)
+- [x] **Скоростной античит** — при средней скорости > 16 км/ч предупреждение + 2-минутный grace period; принудительная отмена если скорость не снизилась
 
 ---
 
@@ -555,37 +582,19 @@ Response (самопересекающийся маршрут — 2 област
 
 ---
 
-## План на следующую сессию (сессия 5)
+## Незавершённые задачи (из плана сессии 5)
 
-| # | Фича | Затронутые файлы |
-|---|------|-----------------|
-| 1 | **Цвет полигонов клана** — лидер выбирает цвет в настройках клана; все полигоны клана перекрашиваются | `ClanScreen.kt`, `clans.ts` (PUT), `YandexMapView.kt` |
-| 2 | **Перекраска при вступлении** — территории игрока принимают `clanColor` при вступлении в клан | `YandexMapView.kt` (уже есть поле `clan_color`, нужно проверить рендер) |
-| 3 | **Аватарка клана** — лидер загружает картинку; хранится в `/uploads/clans/:id.jpg` | `ClanApi.kt`, `ClanScreen.kt`, `clans.ts` (POST `/clans/:id/avatar`) |
-| 4 | **Аватарка пользователя** — игрок загружает в профиле; отображается через Coil | `ProfileScreen.kt`, `UserApi.kt`, `users.ts` (PATCH `/users/me/avatar`) |
-| 5 | **Push «Территория перезахвачена»** — уведомление владельцу когда кто-то захватывает его территорию | `territories.ts` (capture endpoint), `NotificationService.ts` |
+| # | Фича | Статус | Затронутые файлы |
+|---|------|--------|-----------------|
+| 1 | **Цвет полигонов клана** — лидер выбирает цвет; полигоны клана перекрашиваются | ⏳ | `ClanScreen.kt`, `YandexMapView.kt` |
+| 2 | **Перекраска при вступлении** — территории принимают `clanColor` | ⏳ | `YandexMapView.kt` (поле `clan_color` уже есть в DTO) |
 
-### Технические заметки к плану
+### Технические заметки
 
-**П.1 — Цвет клана:**
-- В `formatClan` уже есть поле `color` (цвет тега)
-- Нужно решить: это тот же цвет или отдельное поле `polygon_color`?
-- Проще всего: использовать уже существующий `clan.color` для полигонов клана
-
-**П.2 — Рендер цвета:**
-- В `TerritoryDto` уже есть `clan_color`
-- В `YandexMapView.kt` проверить что при `clanColor != null` полигон рисуется в `clanColor`, а не в `ownerColor`
-
-**П.3 и П.4 — Аватарки:**
-- Сервер уже имеет `multer` upload middleware (`server/src/middleware/upload.ts`)
-- Папка `/uploads` смонтирована в Docker, раздаётся Nginx
-- На Android: `ActivityResultContracts.GetContent()` → multipart upload через Retrofit
-- Отображение: Coil `AsyncImage` уже в зависимостях
-
-**П.5 — Push при захвате:**
-- В `territories.ts` capture endpoint: после `emitTerritoryDeleted(enemy.id)` или `emitTerritoryUpdate()`
-- Добавить `NotificationService.notifyTerritoryLost(enemy.owner_id, attackerUsername, areaM2)`
-- В `NotificationService.ts`: новый метод аналогичный `notifyClanJoinRequest`
+**Цвет полигонов клана:**
+- В `TerritoryDto` уже есть `clan_color` (возвращается сервером)
+- В `YandexMapView.kt` проверить: если `clanColor != null` → использовать его вместо `ownerColor`
+- Лидер может менять `color` клана через `PUT /clans/:id` (уже реализован)
 
 ---
 
