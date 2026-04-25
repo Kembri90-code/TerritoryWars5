@@ -13,4 +13,5 @@ sealed class Screen(val route: String) {
     data object ClanDetail : Screen("clan_detail/{clanId}") {
         fun createRoute(clanId: String) = "clan_detail/$clanId"
     }
+    data object Onboarding : Screen("onboarding")
 }

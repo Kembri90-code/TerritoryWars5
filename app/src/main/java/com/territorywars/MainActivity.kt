@@ -17,6 +17,7 @@ import com.territorywars.presentation.clan.ClanScreen
 import com.territorywars.presentation.leaderboard.LeaderboardScreen
 import com.territorywars.presentation.map.MapScreen
 import com.territorywars.presentation.navigation.Screen
+import com.territorywars.presentation.onboarding.OnboardingScreen
 import com.territorywars.presentation.profile.ProfileScreen
 import com.territorywars.presentation.splash.SplashScreen
 import com.territorywars.presentation.theme.TerritoryWarsTheme
@@ -76,8 +77,18 @@ fun TerritoryWarsNavHost() {
             RegisterScreen(
                 onNavigateBack = { navController.popBackStack() },
                 onRegisterSuccess = {
-                    navController.navigate(Screen.Map.route) {
+                    navController.navigate(Screen.Onboarding.route) {
                         popUpTo(Screen.Login.route) { inclusive = true }
+                    }
+                }
+            )
+        }
+
+        composable(Screen.Onboarding.route) {
+            OnboardingScreen(
+                onComplete = {
+                    navController.navigate(Screen.Map.route) {
+                        popUpTo(Screen.Onboarding.route) { inclusive = true }
                     }
                 }
             )
