@@ -28,6 +28,7 @@ data class ProfileState(
     val isSaving: Boolean = false,
     val error: String? = null,
     val isLoggedOut: Boolean = false,
+    val isAccountDeleted: Boolean = false,
     val selectedMarker: PlayerMarker = PlayerMarker.DOT
 )
 
@@ -119,6 +120,23 @@ class ProfileViewModel @Inject constructor(
                 }
             } catch (_: Exception) {
                 _state.update { it.copy(isSaving = false, error = "Ошибка загрузки") }
+            }
+        }
+    }
+
+    fun deleteAccount() {
+        viewModelScope.launch {
+            _state.update { it.copy(isSaving = true, error = null) }
+            try {
+                val response = userApi.deleteAccount()
+                if (response.isSuccessful) {
+                    tokenDataStore.clearTokens()
+                    _state.update { it.copy(isSaving = false, isAccountDeleted = true) }
+                } else {
+                    _state.update { it.copy(isSaving = false, error = "Не удалось удалить аккаунт") }
+                }
+            } catch (_: Exception) {
+                _state.update { it.copy(isSaving = false, error = "Нет подключения к серверу") }
             }
         }
     }

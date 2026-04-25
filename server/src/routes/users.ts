@@ -134,6 +134,30 @@ router.post('/me/avatar', requireAuth, (req: Request, res: Response) => {
   });
 });
 
+// DELETE /users/me — удалить аккаунт
+router.delete('/me', requireAuth, async (req: Request, res: Response) => {
+  const userId = req.user!.userId;
+  try {
+    await prisma.$transaction(async (tx) => {
+      // Если пользователь лидер клана — расформировать клан
+      const ledClan = await tx.clan.findUnique({ where: { leaderId: userId } });
+      if (ledClan) {
+        await tx.user.updateMany({ where: { clanId: ledClan.id }, data: { clanId: null } });
+        await tx.$executeRaw`UPDATE territories SET clan_id = NULL WHERE clan_id::text = ${ledClan.id}`;
+        await tx.clanJoinRequest.deleteMany({ where: { clanId: ledClan.id } });
+        await tx.clanMember.deleteMany({ where: { clanId: ledClan.id } });
+        await tx.clan.delete({ where: { id: ledClan.id } });
+      }
+      // Удалить пользователя (каскад: территории, членство в клане, токены)
+      await tx.user.delete({ where: { id: userId } });
+    });
+    res.status(204).send();
+  } catch (err) {
+    console.error('[Users] deleteAccount error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // GET /users/:id
 router.get('/:id', requireAuth, async (req: Request, res: Response) => {
   try {

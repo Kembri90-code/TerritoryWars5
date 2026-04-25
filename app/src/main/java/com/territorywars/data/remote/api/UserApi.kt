@@ -19,4 +19,7 @@ interface UserApi {
 
     @GET("users/{id}")
     suspend fun getUserById(@Path("id") id: String): Response<UserDto>
+
+    @DELETE("users/me")
+    suspend fun deleteAccount(): Response<Unit>
 }

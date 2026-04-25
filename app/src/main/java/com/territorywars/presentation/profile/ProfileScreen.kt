@@ -62,9 +62,13 @@ fun ProfileScreen(
     viewModel: ProfileViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    var showDeleteConfirmDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(state.isLoggedOut) {
         if (state.isLoggedOut) onLogout()
+    }
+    LaunchedEffect(state.isAccountDeleted) {
+        if (state.isAccountDeleted) onLogout()
     }
 
     val bg      = MaterialTheme.colorScheme.background
@@ -97,6 +101,7 @@ fun ProfileScreen(
                     onMarkerChange = viewModel::changeMarker,
                     onLogout = viewModel::logout,
                     onAvatarUpload = viewModel::uploadAvatar,
+                    onDeleteAccountClick = { showDeleteConfirmDialog = true },
                 )
             }
         }
@@ -112,6 +117,43 @@ fun ProfileScreen(
             },
         )
     }
+
+    // Диалог подтверждения удаления аккаунта
+    if (showDeleteConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirmDialog = false },
+            containerColor = MaterialTheme.colorScheme.surface,
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(22.dp),
+            title = {
+                androidx.compose.material3.Text(
+                    "Удалить аккаунт?",
+                    fontFamily = PlusJakartaSans,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            },
+            text = {
+                androidx.compose.material3.Text(
+                    "Это действие необратимо. Все ваши территории, данные и прогресс будут удалены навсегда.",
+                    fontFamily = PlusJakartaSans,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { showDeleteConfirmDialog = false; viewModel.deleteAccount() },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                ) {
+                    androidx.compose.material3.Text("Удалить", fontFamily = PlusJakartaSans, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirmDialog = false }) {
+                    androidx.compose.material3.Text("Отмена", fontFamily = PlusJakartaSans)
+                }
+            },
+        )
+    }
 }
 
 @Composable
@@ -123,6 +165,7 @@ private fun ProfileContent(
     onMarkerChange: (PlayerMarker) -> Unit,
     onLogout: () -> Unit,
     onAvatarUpload: (Uri) -> Unit,
+    onDeleteAccountClick: () -> Unit,
 ) {
     val userColor = remember(user.color) { parseColor(user.color) }
     val primary   = MaterialTheme.colorScheme.primary
@@ -351,6 +394,19 @@ private fun ProfileContent(
                     bgAlt = bgAlt,
                     onSurfVar = onSurfVar,
                 )
+            }
+
+            // ── Удалить аккаунт ───────────────────────────────────────────────
+            OutlinedButton(
+                onClick = onDeleteAccountClick,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, errorColor.copy(alpha = 0.5f)),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = errorColor),
+            ) {
+                Icon(Icons.Outlined.DeleteForever, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Удалить аккаунт", fontFamily = PlusJakartaSans, fontWeight = FontWeight.SemiBold)
             }
         }
 
