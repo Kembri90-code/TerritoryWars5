@@ -120,8 +120,8 @@ private fun updateTerritoryPolygons(
 
         val polygon = Polygon(LinearRing(points), emptyList())
         val isOwn = territory.ownerId == myUserId
-        val hexColor = if (isOwn) territory.ownerColor
-                       else territory.clanColor ?: territory.ownerColor
+        // Если территория в клане — используем цвет клана (для всех, включая своих)
+        val hexColor = territory.clanColor ?: territory.ownerColor
 
         val fillColor = try {
             val base = android.graphics.Color.parseColor(hexColor)
