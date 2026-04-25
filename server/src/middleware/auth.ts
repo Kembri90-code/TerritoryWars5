@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { config } from '../config';
+import { redis } from '../redis';
 
 export interface JwtPayload {
   userId: string;
@@ -26,6 +27,9 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
   try {
     const payload = jwt.verify(token, config.jwt.accessSecret) as JwtPayload;
     req.user = payload;
+    // DAU tracking: add userId to Redis SET for today (fire-and-forget)
+    const today = new Date().toISOString().slice(0, 10);
+    redis.sadd(`dau:${today}`, payload.userId).then(() => redis.expire(`dau:${today}`, 30 * 86400)).catch(() => {});
     next();
   } catch {
     res.status(401).json({ error: 'Invalid or expired token' });

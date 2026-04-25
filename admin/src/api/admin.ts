@@ -1,11 +1,17 @@
 import { api } from './client';
 
+export interface DayCount { date: string; count: number; }
+
 export interface Stats {
   users_count: number;
   territories_count: number;
   clans_count: number;
   active_sessions: number;
   total_area_m2: number;
+  dau_today: number;
+  errors_today: number;
+  dau_7days: DayCount[];
+  errors_7days: DayCount[];
   top_users: { id: string; username: string; total_area_m2: number; territories_count: number; color: string }[];
   top_clans: { id: string; name: string; tag: string; total_area_m2: number; territories_count: number; color: string }[];
 }

@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { prisma } from '../prisma';
 import { config } from '../config';
 import { requireAdmin } from '../middleware/adminAuth';
+import { redis } from '../redis';
 
 const router = Router();
 
@@ -52,12 +53,29 @@ router.post('/login', async (req: Request, res: Response) => {
 // GET /admin/stats
 router.get('/stats', requireAdmin, async (_req: Request, res: Response) => {
   try {
-    const [usersCount, territoriesCount, clansCount, activeSessions] = await Promise.all([
+    // Последние 7 дней (сегодня включительно)
+    const last7days = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date();
+      d.setDate(d.getDate() - (6 - i));
+      return d.toISOString().slice(0, 10);
+    });
+
+    const [usersCount, territoriesCount, clansCount, activeSessions, ...redisResults] = await Promise.all([
       prisma.user.count(),
       prisma.territory.count(),
       prisma.clan.count(),
       prisma.refreshToken.count({ where: { expiresAt: { gt: new Date() } } }),
+      // DAU за 7 дней (SCARD = кол-во уникальных userId в SET)
+      ...last7days.map(date => redis.scard(`dau:${date}`)),
+      // Ошибки за 7 дней
+      ...last7days.map(date => redis.get(`errors:${date}`)),
     ]);
+
+    const dauValues = redisResults.slice(0, 7) as number[];
+    const errValues = redisResults.slice(7) as (string | null)[];
+
+    const dau7days = last7days.map((date, i) => ({ date, count: dauValues[i] ?? 0 }));
+    const errors7days = last7days.map((date, i) => ({ date, count: parseInt(errValues[i] ?? '0', 10) || 0 }));
 
     const [totalAreaResult] = await prisma.$queryRaw<{ total: number }[]>`
       SELECT COALESCE(SUM(area_m2), 0)::float AS total FROM territories
@@ -81,6 +99,10 @@ router.get('/stats', requireAdmin, async (_req: Request, res: Response) => {
       clans_count: clansCount,
       active_sessions: activeSessions,
       total_area_m2: totalAreaResult?.total ?? 0,
+      dau_today: dauValues[6] ?? 0,
+      errors_today: parseInt(errValues[6] ?? '0', 10) || 0,
+      dau_7days: dau7days,
+      errors_7days: errors7days,
       top_users: topUsers.map(u => ({
         id: u.id,
         username: u.username,
