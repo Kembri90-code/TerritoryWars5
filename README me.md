@@ -463,6 +463,56 @@ Gradle: `./gradlew assembleDebug` из папки `TerritoryWars/`.
 
 ---
 
+## Технический долг
+
+### DEBT-01 — Отсутствие транзакции в capture endpoint (критично)
+
+**Файл:** `server/src/routes/territories.ts` → `POST /territories/capture`
+
+**Проблема:** Весь capture-цикл выполняется без `prisma.$transaction()`. WebSocket-события
+(`emitTerritoryUpdate`, `emitTerritoryDeleted`) отправляются клиентам прямо внутри цикла
+по вражеским территориям — до того, как все изменения гарантированно зафиксированы в БД.
+При падении сервера на середине операции клиенты получат частичное состояние.
+
+**Как исправить:**
+```typescript
+// Обернуть всю логику изменения данных в транзакцию
+const result = await prisma.$transaction(async (tx) => { ... });
+// WebSocket emit — ПОСЛЕ завершения транзакции
+emitTerritoryUpdate(result.territory);
+```
+**Сложность:** средняя — нужно пробросить `tx` во все вложенные операции внутри цикла.
+
+---
+
+### DEBT-02 — Монолитный capture endpoint (сопровождаемость)
+
+**Файл:** `server/src/routes/territories.ts`
+
+**Проблема:** `POST /territories/capture` одновременно делает: валидацию маршрута, античит,
+PostGIS-геометрию, цикл по вражеским территориям, merge своих, статистику пользователей,
+статистику кланов, broadcast WebSocket. Такой узел регрессионно опасен и сложен для тестирования.
+
+**Как исправить:** вынести в сервис `TerritoryService` с методами:
+`validateRoute()`, `processEnemyOverlaps()`, `mergeOwnTerritories()`, `updateStats()`
+
+---
+
+### DEBT-03 — Prisma + raw SQL для PostGIS (прозрачность)
+
+**Файл:** `server/src/routes/territories.ts`, `server/src/routes/clans.ts`
+
+**Проблема:** Колонка `polygon` не отражена в `schema.prisma` (PostGIS-тип не поддерживается
+Prisma). Все запросы к ней идут через `$queryRaw`. Это вынужденный компромисс, но он:
+- ослабляет типизацию
+- переносит SQL-правила в route-слой
+- привёл к ошибке `text = uuid` (уже задокументирована и исправлена)
+
+**Как исправить:** вынести все PostGIS-запросы в `TerritoryRepository` — хотя бы изолировать
+сырой SQL от бизнес-логики маршрутов.
+
+---
+
 ## Известные баги (актуально на 2026-04-23)
 
 | ID | Файл | Описание |
