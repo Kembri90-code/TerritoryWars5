@@ -4,6 +4,7 @@ import { prisma } from '../prisma';
 import { requireAuth } from '../middleware/auth';
 import { emitTerritoryDeleted, emitTerritoryUpdate } from '../ws/socket';
 import { NotificationService } from '../services/NotificationService';
+import { AchievementService } from '../services/AchievementService';
 
 const router = Router();
 
@@ -26,6 +27,7 @@ function formatTerritory(t: any) {
     owner_color: t.owner?.color ?? '#2979FF',
     clan_id: t.clanId ?? null,
     clan_color: t.clan?.color ?? null,
+    clan_tag: t.clan?.tag ?? null,
     polygon: t.polygon ?? [],
     area_m2: t.areaM2,
     perimeter_m: t.perimeterM,
@@ -57,7 +59,7 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
         t.captured_at, t.updated_at,
         ST_AsGeoJSON(t.polygon)::json AS geojson,
         u.username AS owner_username, u.color AS owner_color,
-        c.color AS clan_color
+        c.color AS clan_color, c.tag AS clan_tag
       FROM territories t
       JOIN users u ON u.id = t.owner_id
       LEFT JOIN clans c ON c.id = t.clan_id
@@ -74,6 +76,7 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
         owner_color: row.owner_color,
         clan_id: row.clan_id ?? null,
         clan_color: row.clan_color ?? null,
+        clan_tag: row.clan_tag ?? null,
         polygon: coords.map(([lng, lat]) => [lng, lat]),
         area_m2: row.area_m2,
         perimeter_m: row.perimeter_m,
@@ -98,7 +101,7 @@ router.get('/my', requireAuth, async (req: Request, res: Response) => {
         t.captured_at, t.updated_at,
         ST_AsGeoJSON(t.polygon)::json AS geojson,
         u.username AS owner_username, u.color AS owner_color,
-        c.color AS clan_color
+        c.color AS clan_color, c.tag AS clan_tag
       FROM territories t
       JOIN users u ON u.id = t.owner_id
       LEFT JOIN clans c ON c.id = t.clan_id
@@ -120,7 +123,7 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
         t.captured_at, t.updated_at,
         ST_AsGeoJSON(t.polygon)::json AS geojson,
         u.username AS owner_username, u.color AS owner_color,
-        c.color AS clan_color
+        c.color AS clan_color, c.tag AS clan_tag
       FROM territories t
       JOIN users u ON u.id = t.owner_id
       LEFT JOIN clans c ON c.id = t.clan_id
@@ -282,7 +285,7 @@ router.post('/capture', requireAuth, async (req: Request, res: Response) => {
           const [updatedRow] = await prisma.$queryRaw<any[]>`
             SELECT t.id, t.owner_id, t.clan_id, t.area_m2, t.perimeter_m, t.captured_at, t.updated_at,
                    ST_AsGeoJSON(t.polygon)::json AS geojson,
-                   u.username AS owner_username, u.color AS owner_color, c.color AS clan_color
+                   u.username AS owner_username, u.color AS owner_color, c.color AS clan_color, c.tag AS clan_tag
             FROM territories t JOIN users u ON u.id = t.owner_id LEFT JOIN clans c ON c.id = t.clan_id
             WHERE t.id = ${enemy.id}
           `;
@@ -377,7 +380,7 @@ router.post('/capture', requireAuth, async (req: Request, res: Response) => {
       const [result] = await prisma.$queryRaw<any[]>`
         SELECT t.id, t.owner_id, t.clan_id, t.area_m2, t.perimeter_m, t.captured_at, t.updated_at,
                ST_AsGeoJSON(t.polygon)::json AS geojson,
-               u.username AS owner_username, u.color AS owner_color, c.color AS clan_color
+               u.username AS owner_username, u.color AS owner_color, c.color AS clan_color, c.tag AS clan_tag
         FROM territories t JOIN users u ON u.id = t.owner_id LEFT JOIN clans c ON c.id = t.clan_id
         WHERE t.id = ${territoryId}
       `;
@@ -394,6 +397,27 @@ router.post('/capture', requireAuth, async (req: Request, res: Response) => {
             territories_count = (SELECT COUNT(*) FROM territories WHERE clan_id::text = ${user.clanId})
         WHERE id::text = ${user.clanId}
       `;
+    }
+
+    // Check & grant achievements (fire-and-forget)
+    const updatedUser = await prisma.user.findUnique({ where: { id: userId } });
+    if (updatedUser) {
+      const captureHour = new Date().getHours();
+      const captureDurationMs = route_points.length >= 2
+        ? route_points[route_points.length - 1].timestamp - route_points[0].timestamp
+        : undefined;
+      AchievementService.checkAndGrant(userId, {
+        capturesCount:    updatedUser.capturesCount,
+        takeoversCount:   updatedUser.takeoversCount,
+        totalAreaM2:      updatedUser.totalAreaM2,
+        distanceWalkedM:  updatedUser.distanceWalkedM,
+        clanId:           updatedUser.clanId,
+        isFigure8:        polygonPieces.length > 1,
+        isAbsorption:     conqueredCount > 0,
+        captureAreaM2:    firstTerritory?.area_m2,
+        captureDurationMs,
+        captureHour,
+      }).catch(() => {});
     }
 
     res.json({
@@ -418,7 +442,7 @@ export async function getUserTerritoriesHandler(req: Request, res: Response) {
         t.captured_at, t.updated_at,
         ST_AsGeoJSON(t.polygon)::json AS geojson,
         u.username AS owner_username, u.color AS owner_color,
-        c.color AS clan_color
+        c.color AS clan_color, c.tag AS clan_tag
       FROM territories t
       JOIN users u ON u.id = t.owner_id
       LEFT JOIN clans c ON c.id = t.clan_id
@@ -440,6 +464,7 @@ function rowToTerritory(row: any) {
     owner_color: row.owner_color,
     clan_id: row.clan_id ?? null,
     clan_color: row.clan_color ?? null,
+    clan_tag: row.clan_tag ?? null,
     polygon: coords.map(([lng, lat]: [number, number]) => [lng, lat]),
     area_m2: parseFloat(row.area_m2),
     perimeter_m: parseFloat(row.perimeter_m),

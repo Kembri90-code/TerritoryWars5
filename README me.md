@@ -1,7 +1,7 @@
 # Territory Wars — Полное описание проекта
 
 > Документ написан для быстрого ввода в контекст нового чата с ИИ.
-> Последнее обновление: 2026-04-24 (сессия 5)
+> Последнее обновление: 2026-04-25 (сессия 6)
 
 ---
 
@@ -54,7 +54,7 @@ cd /opt/territorywars && docker compose build api && docker compose up -d api
 - **Node.js** + **TypeScript** + **Express**
 - **Prisma ORM** + **PostgreSQL 16** + расширение **PostGIS 3.4**
 - **Socket.IO** — WebSocket для real-time событий
-- **Redis 7** — кеширование (пока используется минимально)
+- **Redis 7** — кеширование, DAU-трекинг (`SADD dau:{date} {userId}`), счётчик ошибок (`INCR errors:{date}`)
 - **Docker Compose** — поднимает: PostgreSQL (`tw_postgres`), Redis (`tw_redis`), API (`tw_api`), Nginx (`tw_nginx`)
 - **Nginx** — reverse proxy, раздаёт статику, проксирует /api/ и WebSocket
 
@@ -104,6 +104,7 @@ buildConfigField("String", "WS_URL",   "\"ws://93.183.74.141\"")
 | DELETE | `/api/clans/:id/requests/:userId` | Отклонить заявку (лидер) |
 | GET  | `/api/clans/:id/activity?limit=30` | История захватов клана |
 | POST | `/api/clans/:id/avatar` | Загрузить аватарку клана (лидер, multipart) |
+| DELETE | `/api/users/me` | Удалить аккаунт (+ клан если лидер) |
 | GET  | `/api/leaderboard` | Рейтинг игроков |
 | GET  | `/api/cities` | Список городов |
 | GET  | `/api/admin/*` | Административные эндпоинты |
@@ -212,6 +213,7 @@ Admin            — id, username, passwordHash
 | Splash | `splash` | Загрузка, проверка токена |
 | Login  | `login` | Вход |
 | Register | `register` | Регистрация |
+| Onboarding | `onboarding` | Обучение для новых игроков (4 слайда, HorizontalPager) |
 | Map    | `map` | **Главный экран** — карта + захват |
 | Profile | `profile` | Профиль игрока |
 | EditProfile | `edit_profile` | Редактировать профиль |
@@ -261,6 +263,8 @@ com.territorywars/
 │   │   ├── YandexMapView.kt   — AndroidView обёртка для MapKit
 │   │   └── PlayerMarkerIcon.kt
 │   ├── auth/ (Login, Register + ViewModels)
+│   ├── onboarding/
+│   │   └── OnboardingScreen.kt  — 4 слайда (HorizontalPager), Далее/Начать/Пропустить
 │   ├── profile/
 │   ├── clan/
 │   │   ├── ClanScreen.kt      — экран клана (мой клан / топ кланов / заявки)
@@ -412,7 +416,36 @@ aa464463-dc33-4ba3-8537-d4c089f4cc05
 - Страницы: Dashboard, Users, Territories, Clans, Login
 - Доступна по `http://93.183.74.141/admin/`
 - Аутентификация: отдельная таблица `admins` (не связана с User)
+- Учётные данные: `admin` / `Admin123!`
 - Статика собирается в `admin/dist/`, раздаётся через Nginx
+- `BrowserRouter` с `basename="/admin"` — обязательно для корректной маршрутизации под `/admin/`
+
+### Admin Dashboard — статистика (Redis)
+
+`GET /api/admin/stats` возвращает:
+
+| Поле | Источник |
+|------|----------|
+| `total_users` | `COUNT(*)` из `users` |
+| `total_territories` | `COUNT(*)` из `territories` |
+| `total_clans` | `COUNT(*)` из `clans` |
+| `active_sessions` | `SCARD online_users` (Redis) |
+| `dau_today` | `SCARD dau:{date}` (Redis) |
+| `errors_today` | `GET errors:{date}` (Redis) |
+| `dau_7days` | SCARD за 7 последних дней |
+| `errors_7days` | GET за 7 последних дней |
+
+**Трекинг DAU** — в middleware `auth.ts` при каждом успешном JWT-запросе:
+```typescript
+redis.sadd(`dau:${today}`, payload.userId)  // SADD = уникальные пользователи
+redis.expire(`dau:${today}`, 30 * 86400)    // хранить 30 дней
+```
+
+**Счётчик ошибок** — в `errorHandler.ts` при каждой 500-ошибке:
+```typescript
+redis.incr(`errors:${today}`)
+redis.expire(`errors:${today}`, 30 * 86400)
+```
 
 ---
 
@@ -431,6 +464,20 @@ Docker Compose: server/docker-compose.yml
   server/deploy.sh           — сборка и перезапуск контейнеров
   server/deploy-to-server.sh — rsync + deploy на сервер
   deploy-admin.sh            — сборка и деплой admin панели
+```
+
+### Деплой Admin панели
+
+**ВАЖНО**: `docker-compose.yml` монтирует `../admin/dist:/admin:ro`, что на сервере
+разрешается в `/opt/admin/dist/` — НЕ `/opt/territorywars/admin/dist/`.
+
+```bash
+# Собрать локально
+cd admin && npm run build
+
+# Загрузить на сервер
+scp -i "C:/Users/Илья/Downloads/runterritory-api.pem" -o StrictHostKeyChecking=no \
+  -r admin/dist/. root@93.183.74.141:/opt/admin/dist/
 ```
 
 ### Деплой изменений на сервер (быстрый способ)
@@ -513,14 +560,14 @@ Prisma). Все запросы к ней идут через `$queryRaw`. Это
 
 ---
 
-## Известные баги (актуально на 2026-04-23)
+## Известные баги (актуально на 2026-04-25)
 
-| ID | Файл | Описание |
-|----|------|----------|
-| BUG-06 | `ClanViewModel.kt` | Двойной `response.body()!!` — риск NPE |
-| BUG-07 | Profile/Leaderboard vs Clan | Несовместимые единицы площади (км² vs га) |
-| BUG-08 | `TokenAuthenticator.kt` | Создаёт новый Retrofit/OkHttp на каждый 401 |
-| BUG-09 | `ClanScreen.kt` | Показывает `members.size` вместо `clan.membersCount` |
+| ID | Файл | Описание | Статус |
+|----|------|----------|--------|
+| BUG-06 | `ClanViewModel.kt` | Двойной `response.body()!!` — риск NPE | ✅ Исправлен: `body()` сохраняется в локальную переменную, остальные заменены на `.orEmpty()` |
+| BUG-07 | `ClanScreen.kt` | Несовместимые единицы площади: Клан показывал `га`, Profile/Leaderboard — `км²` | ✅ Исправлен: `formatArea` в ClanScreen приведён к `км²` |
+| BUG-08 | `TokenAuthenticator.kt` | Создаёт новый `Retrofit`/`OkHttp` на каждый 401 — утечка ресурсов | ✅ Исправлен: `authApi` вынесен в `lazy` свойство, создаётся один раз |
+| BUG-09 | `ClanScreen.kt` | Показывает `members.size` вместо `clan.membersCount` — расхождение после кика | ✅ Исправлен: заменено на `clan.membersCount` |
 
 ---
 
@@ -557,6 +604,47 @@ Prisma). Все запросы к ней идут через `$queryRaw`. Это
 - [x] Аватарки пользователей в рейтинге (Podium, PlayerRow) и экране клана (MemberRow, TopMemberRow, JoinRequestRow)
 - [x] Аватарка клана в рейтинге (ClanRow)
 - [x] **Скоростной античит** — при средней скорости > 16 км/ч предупреждение + 2-минутный grace period; принудительная отмена если скорость не снизилась
+- [x] **Онбординг** — 4 слайда (HorizontalPager) после регистрации: Welcome, Захват, Кланы, Старт; кнопки Далее/Начать/Пропустить
+- [x] **Удаление аккаунта** — в ProfileScreen, с подтверждением (AlertDialog); если пользователь лидер — клан и все его данные удаляются; токены очищаются, редирект на Login
+- [x] **Admin дашборд** — карточки: Аккаунтов, Активны сегодня (DAU), Ошибок сегодня, Территорий, Кланов; мини-гистограммы за 7 дней для DAU и ошибок
+- [x] **Цвет полигонов клана** — `YandexMapView` использует `clanColor ?: ownerColor` (вместо условия `isOwn`)
+- [x] **Метки на полигонах** — для территорий >= 500 м² в центроиде отображается bitmap-метка: ник (жирный 13sp) + [тег клана] (11sp) под ним; белый текст с чёрным контуром; API теперь возвращает `clan_tag` во всех territory-эндпоинтах
+- [x] **Поглощение территорий** — игрок может обойти чужую территорию снаружи не заходя в неё; `ST_Intersects` находит её как пересечение, `ST_Difference` возвращает пустую геометрию → полный захват (DELETE); работает через существующую capture-логику без дополнительного кода
+- [x] **`clan_tag` в territory API** — добавлен `c.tag AS clan_tag` во все 6 SQL-запросов territories; `Territory.kt`, `TerritoryDto.kt`, `SocketManager.kt` обновлены; `TerritoryDao.kt` исправлен (был баг: отсутствовало поле при конструировании объекта)
+- [x] **Документация в Confluence** — создано ~30 страниц: Продукт, Архитектура, API Reference, Android, Инфраструктура, Долг; 5 BPMN/flowchart диаграмм в draw.io; реальные скриншоты всех экранов загружены с описанием каждой кнопки
+- [x] **Профиль: цвет + маркер** — на экране профиля добавлен выбор цвета территорий (12 цветов) и маркера на карте (Точка/Стрелка/Звезда/Ромб)
+- [x] **Система достижений (сервер)** — таблицы `achievements` (20 достижений) и `user_achievements` в БД; `AchievementService.ts` проверяет и выдаёт достижения после каждого захвата; эндпоинты `GET /api/achievements` и `GET /api/achievements/me`
+- [x] **Система достижений (Android)** — `AchievementsScreen.kt`: карточка прогресса (очки + прогресс-бар), секция «Выполненные» (цветные) + «Доступные» (серые, по категориям); новая вкладка в ProfileScreen
+
+---
+
+## Тестирование (актуально на 2026-04-26)
+
+### Smoke-тесты (6/6 ✅)
+| # | Тест | Результат |
+|---|------|-----------|
+| 1 | GET /health | 200 ✅ |
+| 2 | GET /api/auth/check-username | 200 ✅ |
+| 3 | GET /api/cities | 200 ✅ |
+| 4 | GET /api/achievements без авторизации | 401 ✅ |
+| 5 | GET /api/territories без авторизации | 401 ✅ |
+| 6 | GET /api/nonexistent | 404 ✅ |
+
+### Функциональные тесты (14/15 ✅, 1 pre-existing)
+Все ключевые эндпоинты работают корректно. Единственный несоответствие: `GET /api/clans` не имеет обработчика списка (pre-existing bug — список кланов доступен через `/api/leaderboard/clans`).
+
+### Интеграционные тесты (14/14 ✅)
+| Flow | Описание | Результат |
+|------|----------|-----------|
+| 1 | Login → Profile | ✅ |
+| 2 | Token Refresh | ✅ |
+| 3 | Achievements pipeline (20 штук загружены) | ✅ |
+| 4 | Capture validation (400 на некорректные данные) | ✅ |
+| 5 | Leaderboard players/clans | ✅ |
+| 6 | Security (401 на невалидный/отсутствующий токен) | ✅ |
+
+### Известный pre-existing баг
+`GET /api/clans` возвращает 404 — у clansRouter нет обработчика `GET /`. Список кланов доступен через `/api/leaderboard/clans`.
 
 ---
 
@@ -632,19 +720,12 @@ Response (самопересекающийся маршрут — 2 област
 
 ---
 
-## Незавершённые задачи (из плана сессии 5)
+## Незавершённые задачи
 
 | # | Фича | Статус | Затронутые файлы |
 |---|------|--------|-----------------|
-| 1 | **Цвет полигонов клана** — лидер выбирает цвет; полигоны клана перекрашиваются | ⏳ | `ClanScreen.kt`, `YandexMapView.kt` |
-| 2 | **Перекраска при вступлении** — территории принимают `clanColor` | ⏳ | `YandexMapView.kt` (поле `clan_color` уже есть в DTO) |
-
-### Технические заметки
-
-**Цвет полигонов клана:**
-- В `TerritoryDto` уже есть `clan_color` (возвращается сервером)
-- В `YandexMapView.kt` проверить: если `clanColor != null` → использовать его вместо `ownerColor`
-- Лидер может менять `color` клана через `PUT /clans/:id` (уже реализован)
+| 1 | **Цвет полигонов клана** — полигоны клана перекрашиваются в цвет клана | ✅ | `YandexMapView.kt` |
+| 2 | **Перекраска при вступлении** — реал-тайм смена цвета на карте при вступлении в клан | ⏳ | `YandexMapView.kt`, `SocketManager.kt` |
 
 ---
 
@@ -654,3 +735,75 @@ Response (самопересекающийся маршрут — 2 област
 https://github.com/Kembri90-code/TerritoryWars5
 Ветка: main
 ```
+
+---
+
+## Правило: синхронизация с Confluence
+
+**Если фича или изменение описаны в Confluence — обновляй документацию там же.**
+
+Confluence: `https://bergamicadorette.atlassian.net/wiki/home`
+
+| Что изменилось | Какую страницу обновить |
+|---|---|
+| Новый API эндпоинт | API Reference → соответствующий раздел |
+| Изменение экрана / новая кнопка | Продукт → Экраны → нужный экран |
+| Новая бизнес-логика / фича | Продукт → Бизнес-логика фич |
+| Изменение схемы БД | Архитектура → База данных |
+| Изменение деплоя / инфраструктуры | Инфраструктура → соответствующий раздел |
+| Новый технический долг / баг | Технический долг и баги |
+
+**Правило**: не считай фичу завершённой пока README me.md и Confluence не обновлены.
+
+---
+
+## Правило: версионирование в GitHub (для отката)
+
+После каждого значимого изменения создавай тег версии в GitHub. Это позволяет откатиться при багах или негативных отзывах.
+
+### Как создать тег версии
+
+```bash
+# 1. Убедись что все изменения закоммичены
+git add .
+git commit -m "feat: описание что сделано"
+
+# 2. Создай тег с номером версии
+git tag -a v1.2.0 -m "Добавлены метки на полигонах, clan_tag в API"
+
+# 3. Запушь тег на GitHub
+git push origin main
+git push origin v1.2.0
+```
+
+### Схема нумерации версий
+
+```
+v МАЖОР . МИНОР . ПАТЧ
+  │        │       └─ Исправление бага (v1.2.1)
+  │        └───────── Новая фича (v1.3.0)
+  └────────────────── Крупное изменение архитектуры (v2.0.0)
+```
+
+### Как откатиться на предыдущую версию
+
+```bash
+# Посмотреть все теги
+git tag -l
+
+# Откатить код к тегу
+git checkout v1.1.0
+
+# Или откатить и сделать новую ветку для хотфикса
+git checkout -b hotfix/rollback v1.1.0
+```
+
+### Текущие версии
+
+| Версия | Дата | Что включено |
+|--------|------|-------------|
+| v1.0.0 | 2026-04-20 | Базовый захват, кланы, рейтинг |
+| v1.1.0 | 2026-04-23 | Аватарки, push-уведомления, онбординг |
+| v1.2.0 | 2026-04-25 | Метки на полигонах, clan_tag, удаление аккаунта, admin дашборд |
+
+**После каждой новой фичи добавляй строку в эту таблицу.**

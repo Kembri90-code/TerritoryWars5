@@ -7,6 +7,7 @@ data class Territory(
     val ownerColor: String,      // #RRGGBB
     val clanId: String?,
     val clanColor: String?,
+    val clanTag: String?,
     val polygon: List<GeoPoint>, // список вершин полигона
     val areaM2: Double,
     val perimeterM: Double,

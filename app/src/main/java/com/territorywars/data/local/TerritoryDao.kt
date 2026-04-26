@@ -54,6 +54,7 @@ fun TerritoryEntity.toDomain(): Territory {
         ownerColor = color,
         clanId = null,
         clanColor = null,
+        clanTag = null,
         polygon = points,
         areaM2 = areaM2,
         perimeterM = perimeterM,

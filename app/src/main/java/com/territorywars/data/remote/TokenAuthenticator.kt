@@ -21,6 +21,15 @@ class TokenAuthenticator @Inject constructor(
     private val tokenDataStore: TokenDataStore,
 ) : Authenticator {
 
+    private val authApi: AuthApi by lazy {
+        Retrofit.Builder()
+            .baseUrl(BuildConfig.BASE_URL)
+            .client(OkHttpClient())
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+            .create(AuthApi::class.java)
+    }
+
     override fun authenticate(route: Route?, response: Response): Request? {
         if (responseCount(response) >= 2) return null
 
@@ -28,13 +37,6 @@ class TokenAuthenticator @Inject constructor(
 
         val newAccessToken = runBlocking {
             try {
-                val authApi = Retrofit.Builder()
-                    .baseUrl(BuildConfig.BASE_URL)
-                    .client(OkHttpClient())
-                    .addConverterFactory(GsonConverterFactory.create())
-                    .build()
-                    .create(AuthApi::class.java)
-
                 val refreshResponse = authApi.refresh(RefreshRequest(refreshToken = refreshToken))
                 if (refreshResponse.isSuccessful) {
                     val newToken = refreshResponse.body()!!.accessToken

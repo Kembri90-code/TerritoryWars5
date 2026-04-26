@@ -11,6 +11,7 @@ import { clansRouter } from './routes/clans';
 import { leaderboardRouter } from './routes/leaderboard';
 import { citiesRouter } from './routes/cities';
 import { adminRouter } from './routes/admin';
+import { achievementsRouter } from './routes/achievements';
 import { requireAuth } from './middleware/auth';
 import { errorHandler } from './middleware/errorHandler';
 
@@ -49,6 +50,7 @@ app.use('/api/clans', clansRouter);
 app.use('/api/leaderboard', leaderboardRouter);
 app.use('/api/cities', citiesRouter);
 app.use('/api/admin', adminRouter);
+app.use('/api/achievements', achievementsRouter);
 
 // GET /api/users/:id/territories
 app.get('/api/users/:id/territories', requireAuth, getUserTerritoriesHandler);

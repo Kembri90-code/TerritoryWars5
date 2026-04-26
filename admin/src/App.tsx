@@ -13,7 +13,7 @@ function RequireAuth({ children }: { children: JSX.Element }) {
 
 export default function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename="/admin">
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route

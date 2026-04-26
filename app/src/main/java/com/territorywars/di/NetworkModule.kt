@@ -71,4 +71,8 @@ object NetworkModule {
     @Provides @Singleton
     fun provideCityApi(retrofit: Retrofit): CityApi =
         retrofit.create(CityApi::class.java)
+
+    @Provides @Singleton
+    fun provideAchievementApi(retrofit: Retrofit): AchievementApi =
+        retrofit.create(AchievementApi::class.java)
 }

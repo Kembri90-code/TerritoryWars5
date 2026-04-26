@@ -96,6 +96,7 @@ class SocketManager @Inject constructor(
             ownerColor = json.getString("owner_color"),
             clanId = if (json.isNull("clan_id")) null else json.getString("clan_id"),
             clanColor = if (json.isNull("clan_color")) null else json.getString("clan_color"),
+            clanTag = if (json.isNull("clan_tag")) null else json.optString("clan_tag").ifEmpty { null },
             polygon = polygon,
             areaM2 = json.getDouble("area_m2"),
             perimeterM = json.getDouble("perimeter_m"),

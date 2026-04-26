@@ -1,5 +1,11 @@
 package com.territorywars.presentation.map
 
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.PointF
+import android.graphics.Typeface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
@@ -13,6 +19,7 @@ import com.yandex.mapkit.geometry.Point
 import com.yandex.mapkit.geometry.Polygon
 import com.yandex.mapkit.geometry.Polyline
 import com.yandex.mapkit.layers.ObjectEvent
+import com.yandex.mapkit.map.IconStyle
 import com.yandex.mapkit.map.InputListener
 import com.yandex.mapkit.map.Map
 import com.yandex.mapkit.map.MapObjectCollection
@@ -82,7 +89,7 @@ fun YandexMapView(
             }
 
             holder.territoriesCollection?.let { col ->
-                updateTerritoryPolygons(col, state.territories, state.myUserId)
+                updateTerritoryPolygons(col, state.territories, state.myUserId, it.context)
             }
             holder.routeCollection?.let { col ->
                 updateCaptureRoute(col, state)
@@ -110,7 +117,8 @@ private fun applyUserMarker(view: UserLocationView, marker: PlayerMarker, colorH
 private fun updateTerritoryPolygons(
     collection: MapObjectCollection,
     territories: List<Territory>,
-    myUserId: String?
+    myUserId: String?,
+    context: Context
 ) {
     collection.clear()
 
@@ -120,7 +128,6 @@ private fun updateTerritoryPolygons(
 
         val polygon = Polygon(LinearRing(points), emptyList())
         val isOwn = territory.ownerId == myUserId
-        // Если территория в клане — используем цвет клана (для всех, включая своих)
         val hexColor = territory.clanColor ?: territory.ownerColor
 
         val fillColor = try {
@@ -145,7 +152,83 @@ private fun updateTerritoryPolygons(
             obj.strokeWidth = if (isOwn) 3f else 2f
             obj.zIndex = if (isOwn) 1f else 0f
         }
+
+        if (territory.areaM2 >= 500.0) {
+            val centroid = calculateCentroid(points)
+            val labelBitmap = createTerritoryLabelBitmap(context, territory.ownerUsername, territory.clanTag)
+            collection.addPlacemark(centroid).apply {
+                setIcon(
+                    ImageProvider.fromBitmap(labelBitmap),
+                    IconStyle().apply { anchor = PointF(0.5f, 0.5f) }
+                )
+                zIndex = if (isOwn) 2f else 1f
+            }
+        }
     }
+}
+
+private fun calculateCentroid(points: List<Point>): Point {
+    val lat = points.map { it.latitude }.average()
+    val lng = points.map { it.longitude }.average()
+    return Point(lat, lng)
+}
+
+private fun createTerritoryLabelBitmap(context: Context, username: String, clanTag: String?): Bitmap {
+    val density = context.resources.displayMetrics.density
+    val nameSize = 13f * density
+    val clanSize = 11f * density
+    val padding = (4 * density).toInt()
+    val lineGap = (3 * density).toInt()
+
+    val namePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = android.graphics.Color.WHITE
+        textSize = nameSize
+        typeface = Typeface.DEFAULT_BOLD
+        textAlign = Paint.Align.CENTER
+    }
+    val nameOutline = Paint(namePaint).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 3.5f * density
+        color = android.graphics.Color.BLACK
+    }
+    val clanText = if (clanTag != null) "[$clanTag]" else null
+    val clanPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = android.graphics.Color.WHITE
+        textSize = clanSize
+        typeface = Typeface.DEFAULT
+        textAlign = Paint.Align.CENTER
+    }
+    val clanOutline = Paint(clanPaint).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 3f * density
+        color = android.graphics.Color.BLACK
+    }
+
+    val nameWidth = namePaint.measureText(username)
+    val clanWidth = if (clanText != null) clanPaint.measureText(clanText) else 0f
+    val bitmapWidth = (maxOf(nameWidth, clanWidth) + padding * 2).toInt().coerceAtLeast(1)
+
+    val nameFm = namePaint.fontMetrics
+    val nameLineH = (-nameFm.ascent + nameFm.descent).toInt()
+    val clanFm = clanPaint.fontMetrics
+    val clanLineH = (-clanFm.ascent + clanFm.descent).toInt()
+    val bitmapHeight = (nameLineH + if (clanText != null) lineGap + clanLineH else 0 + padding).coerceAtLeast(1)
+
+    val bitmap = Bitmap.createBitmap(bitmapWidth, bitmapHeight, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    val cx = bitmapWidth / 2f
+    val nameY = -nameFm.ascent
+
+    canvas.drawText(username, cx, nameY, nameOutline)
+    canvas.drawText(username, cx, nameY, namePaint)
+
+    if (clanText != null) {
+        val clanY = nameY + nameFm.descent + lineGap + (-clanFm.ascent)
+        canvas.drawText(clanText, cx, clanY, clanOutline)
+        canvas.drawText(clanText, cx, clanY, clanPaint)
+    }
+
+    return bitmap
 }
 
 private fun updateCaptureRoute(

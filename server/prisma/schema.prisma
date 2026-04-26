@@ -35,8 +35,35 @@ model User {
   clanMembership    ClanMember?
   refreshTokens     RefreshToken[]
   clanJoinRequests  ClanJoinRequest[]
+  userAchievements  UserAchievement[]
 
   @@map("users")
+}
+
+model Achievement {
+  id          String @id
+  key         String @unique
+  name        String
+  description String
+  category    String
+  points      Int
+  icon        String @default("🏆")
+
+  userAchievements UserAchievement[]
+
+  @@map("achievements")
+}
+
+model UserAchievement {
+  userId        String   @map("user_id")
+  achievementId String   @map("achievement_id")
+  unlockedAt    DateTime @default(now()) @map("unlocked_at")
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  achievement Achievement @relation(fields: [achievementId], references: [id])
+
+  @@id([userId, achievementId])
+  @@map("user_achievements")
 }
 
 model City {

@@ -93,16 +93,40 @@ fun ProfileScreen(
                         OutlinedButton(onClick = viewModel::loadProfile) { Text("Повторить") }
                     }
                 }
-                state.user != null -> ProfileContent(
-                    user = state.user!!,
-                    isSaving = state.isSaving,
-                    selectedMarker = state.selectedMarker,
-                    onColorChange = viewModel::changeColor,
-                    onMarkerChange = viewModel::changeMarker,
-                    onLogout = viewModel::logout,
-                    onAvatarUpload = viewModel::uploadAvatar,
-                    onDeleteAccountClick = { showDeleteConfirmDialog = true },
-                )
+                state.user != null -> {
+                    var selectedTab by remember { mutableIntStateOf(0) }
+                    Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
+                        TabRow(
+                            selectedTabIndex = selectedTab,
+                            containerColor = MaterialTheme.colorScheme.surface,
+                            contentColor = MaterialTheme.colorScheme.primary,
+                        ) {
+                            Tab(
+                                selected = selectedTab == 0,
+                                onClick = { selectedTab = 0 },
+                                text = { Text("Профиль", fontSize = 14.sp, fontFamily = PlusJakartaSans) },
+                            )
+                            Tab(
+                                selected = selectedTab == 1,
+                                onClick = { selectedTab = 1 },
+                                text = { Text("Достижения", fontSize = 14.sp, fontFamily = PlusJakartaSans) },
+                            )
+                        }
+                        when (selectedTab) {
+                            0 -> ProfileContent(
+                                user = state.user!!,
+                                isSaving = state.isSaving,
+                                selectedMarker = state.selectedMarker,
+                                onColorChange = viewModel::changeColor,
+                                onMarkerChange = viewModel::changeMarker,
+                                onLogout = viewModel::logout,
+                                onAvatarUpload = viewModel::uploadAvatar,
+                                onDeleteAccountClick = { showDeleteConfirmDialog = true },
+                            )
+                            1 -> AchievementsScreen()
+                        }
+                    }
+                }
             }
         }
 

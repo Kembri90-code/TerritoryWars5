@@ -137,9 +137,7 @@ class ClanViewModel @Inject constructor(
                     _state.update {
                         it.copy(
                             myClan = null,
-                            topClans = if (topResponse.isSuccessful)
-                                topResponse.body()!!.map { dto -> dto.toDomain() }
-                            else emptyList(),
+                            topClans = topResponse.body().orEmpty().map { dto -> dto.toDomain() },
                             isLoading = false
                         )
                     }
@@ -203,20 +201,22 @@ class ClanViewModel @Inject constructor(
                     )
                 )
                 if (response.isSuccessful) {
+                    val clanDto = response.body() ?: run {
+                        _state.update { it.copy(isActionLoading = false, actionError = "Нет данных от сервера") }
+                        return@launch
+                    }
                     _state.update {
                         it.copy(
                             isActionLoading = false,
                             isCreating = false,
-                            myClan = response.body()!!.toDomain(),
+                            myClan = clanDto.toDomain(),
                             members = emptyList(),
                             successMessage = "✓ Клан «${form.name}» создан!"
                         )
                     }
-                    // Загружаем участников
-                    val clanId = response.body()!!.id
-                    val membersResponse = clanApi.getClanMembers(clanId)
+                    val membersResponse = clanApi.getClanMembers(clanDto.id)
                     if (membersResponse.isSuccessful) {
-                        _state.update { it.copy(members = membersResponse.body()!!.map { m -> m.toDomain() }) }
+                        _state.update { it.copy(members = membersResponse.body().orEmpty().map { m -> m.toDomain() }) }
                     }
                 } else {
                     val msg = when (response.code()) {
@@ -501,7 +501,7 @@ private fun ClanJoinRequestDto.toItem() = ClanJoinRequestItem(
 
 private fun ClanLeaderboardDto.toDomain() = ClanLeaderboardEntry(
     rank = rank, clanId = clanId, name = name, tag = tag, color = color,
-    totalAreaM2 = totalAreaM2, membersCount = membersCount, territoriesCount = territoriesCount
+    avatarUrl = avatarUrl, totalAreaM2 = totalAreaM2, membersCount = membersCount, territoriesCount = territoriesCount
 )
 
 private fun ClanActivityDto.toItem() = ClanActivityItem(

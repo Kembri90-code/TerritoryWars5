@@ -50,8 +50,8 @@ import com.territorywars.presentation.theme.parseColor
 
 private fun formatArea(m2: Double): String = when {
     m2 < 1_000 -> "${m2.toInt()} м²"
-    m2 < 100_000 -> "${"%.2f".format(m2 / 10_000)} га"
-    else -> "${"%.0f".format(m2 / 10_000)} га"
+    m2 < 1_000_000 -> "${"%.2f".format(m2 / 1_000_000)} км²"
+    else -> "${"%.0f".format(m2 / 1_000_000)} км²"
 }
 
 private val CLAN_COLORS = listOf(
@@ -463,7 +463,7 @@ private fun MyClanContent(
                     }
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                         ClanStatCard("Площадь", formatArea(clan.totalAreaM2), clanColor)
-                        ClanStatCard("Участники", "${members.size}/${clan.maxMembers}", clanColor)
+                        ClanStatCard("Участники", "${clan.membersCount}/${clan.maxMembers}", clanColor)
                     }
                 }
             }

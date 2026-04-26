@@ -12,6 +12,7 @@ data class TerritoryDto(
     @SerializedName("owner_color") val ownerColor: String,
     @SerializedName("clan_id") val clanId: String?,
     @SerializedName("clan_color") val clanColor: String?,
+    @SerializedName("clan_tag") val clanTag: String?,
     @SerializedName("polygon") val polygon: List<List<Double>>, // [[lng, lat], ...]
     @SerializedName("area_m2") val areaM2: Double,
     @SerializedName("perimeter_m") val perimeterM: Double,
@@ -25,6 +26,7 @@ data class TerritoryDto(
         ownerColor = ownerColor,
         clanId = clanId,
         clanColor = clanColor,
+        clanTag = clanTag,
         polygon = polygon.map { GeoPoint(lat = it[1], lng = it[0]) },
         areaM2 = areaM2,
         perimeterM = perimeterM,
